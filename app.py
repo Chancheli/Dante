@@ -3,6 +3,35 @@ from datetime import datetime
 import streamlit as st
 
 # ---------------------------------------------------------
+# 0. ΑΣΦΑΛΕΙΑ / PASSWORD CHECK
+# ---------------------------------------------------------
+def check_password():
+    """Επιστρέφει True αν ο χρήστης δώσει το σωστό PIN/Password."""
+    if "authenticated" not in st.session_state:
+        st.session_state["authenticated"] = False
+
+    if st.session_state["authenticated"]:
+        return True
+
+    st.title("🔒 Πρόσβαση στο Σύστημα Crew Operations")
+    st.write("Παρακαλώ εισάγετε τον κωδικό πρόσβασης για να συνεχίσετε.")
+
+    # Ορίζεις εδώ τον κωδικό που θέλεις
+    CORRECT_PASSWORD = "crew2026"
+
+    user_password = st.text_input("Κωδικός Πρόσβασης:", type="password")
+
+    if st.button("Είσοδος"):
+        if user_password == CORRECT_PASSWORD:
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.error("❌ Λάθος κωδικός πρόσβασης! Προσπαθήστε ξανά.")
+
+    return False
+
+
+# ---------------------------------------------------------
 # 1. ΒΑΣΗ ΔΕΔΟΜΕΝΩΝ (SQLite Setup)
 # ---------------------------------------------------------
 def init_db():
@@ -67,7 +96,7 @@ def add_log(
     """,
         (
             port_name.strip().upper(),
-            country.strip().title(),
+            country.strip().upper(),
             nationality,
             role,
             issue_type,
@@ -84,24 +113,38 @@ def add_log(
     conn.close()
 
 
-def get_logs_for_port(port_name, nationality=None, role=None):
+def search_logs(query_text, nationality=None, role=None):
+    """
+    Έξυπνη αναζήτηση σε Λιμάνι, Χώρα, Περιγραφή, Σημειώσεις και Έγγραφα.
+    """
     conn = sqlite3.connect("crew_port_rules.db")
     cursor = conn.cursor()
 
-    query = "SELECT * FROM port_logs WHERE port_name = ?"
-    params = [port_name.strip().upper()]
+    sql = "SELECT * FROM port_logs WHERE 1=1"
+    params = []
+
+    if query_text:
+        search_pattern = f"%{query_text.strip().upper()}%"
+        sql += """ AND (
+            UPPER(port_name) LIKE ? 
+            OR UPPER(country) LIKE ? 
+            OR UPPER(description) LIKE ? 
+            OR UPPER(agent_details) LIKE ? 
+            OR UPPER(required_docs) LIKE ?
+        )"""
+        params.extend([search_pattern] * 5)
 
     if nationality and nationality != "Όλες":
-        query += " AND (nationality = ? OR nationality = 'Όλες')"
+        sql += " AND (nationality = ? OR nationality = 'Όλες')"
         params.append(nationality)
 
     if role and role != "Όλοι":
-        query += " AND (role = ? OR role = 'Όλοι')"
+        sql += " AND (role = ? OR role = 'Όλοι')"
         params.append(role)
 
-    query += " ORDER BY id DESC"
+    sql += " ORDER BY id DESC"
 
-    cursor.execute(query, params)
+    cursor.execute(sql, params)
     rows = cursor.fetchall()
     conn.close()
     return rows
@@ -129,7 +172,7 @@ def fetch_external_travel_rules(destination_country, passport_nationality):
         ]:
             visa_required = False
             transit_info = "Ελεύθερη είσοδος / Transit χωρίς βίζα για διαμονή έως 90 ημέρες."
-        elif dest in ["usa", "united states"]:
+        elif dest in ["usa", "united states", "us"]:
             visa_required = True
             transit_info = "Απαιτείται ESTA ή US C1/D Visa για ναυτικούς."
 
@@ -157,7 +200,19 @@ def main():
     st.set_page_config(
         page_title="Crew Operations & Port Intelligence", layout="wide"
     )
+
+    # Έλεγχος πρόσβασης πριν εμφανιστεί οτιδήποτε
+    if not check_password():
+        return
+
     init_db()
+
+    # Πλευρικό κουμπί αποσύνδεσης (Logout)
+    with st.sidebar:
+        st.write("👤 Συνδεδεμένος Χρήστης")
+        if st.button("Αποσύνδεση (Logout)"):
+            st.session_state["authenticated"] = False
+            st.rerun()
 
     st.title("⚓ Crew Operations & Port Intelligence System")
     st.write(
@@ -166,7 +221,7 @@ def main():
 
     tab1, tab2, tab3 = st.tabs(
         [
-            "🔍 Αναζήτηση Λιμανιού & Alerts (Internal)",
+            "🔍 Αναζήτηση Λιμανιού/Χώρας & Alerts (Internal)",
             "🌐 Live Εξωτερικές Πληροφορίες (External API)",
             "➕ Καταχώρηση Νέας Εμπειρίας / Δυσκολίας",
         ]
@@ -180,8 +235,9 @@ def main():
 
         col1, col2, col3 = st.columns(3)
         with col1:
-            search_port = st.text_input(
-                "Όνομα Λιμανιού (π.χ. Singapore, Garyville, Suez):"
+            search_query = st.text_input(
+                "🔍 Λιμάνι, Χώρα ή Λέξη-Κλειδί:",
+                placeholder="e.g. USA, Garyville, Ploutos, Jamaica",
             )
         with col2:
             search_nat = st.selectbox(
@@ -193,10 +249,8 @@ def main():
             )
 
         if st.button("Έλεγχος Ιστορικού"):
-            if search_port:
-                logs = get_logs_for_port(
-                    search_port, search_nat, search_role
-                )
+            if search_query:
+                logs = search_logs(search_query, search_nat, search_role)
 
                 if logs:
                     critical_alerts = [
@@ -205,11 +259,11 @@ def main():
 
                     if critical_alerts:
                         st.error(
-                            f"🚨 **ΠΡΟΣΟΧΗ! Βρέθηκαν {len(critical_alerts)} σημαντικές ειδοποιήσεις/δυσκολίες για το λιμάνι {search_port.upper()}!**"
+                            f"🚨 **ΠΡΟΣΟΧΗ! Βρέθηκαν {len(critical_alerts)} σημαντικές ειδοποιήσεις/δυσκολίες για την αναζήτηση '{search_query.upper()}'!**"
                         )
                     else:
                         st.warning(
-                            f"⚠️ Βρέθηκαν {len(logs)} καταγεγραμμένες σημειώσεις/συμβάντα για το λιμάνι {search_port.upper()}."
+                            f"⚠️ Βρέθηκαν {len(logs)} καταγεγραμμένες σημειώσεις/συμβάντα για την αναζήτηση '{search_query.upper()}'."
                         )
 
                     for log in logs:
@@ -239,9 +293,11 @@ def main():
                             else f"🔵 **[Σοβαρότητα: {severity}]**"
                         )
 
-                        st.markdown(f"### {header_badge} - {i_type}")
+                        st.markdown(
+                            f"### {header_badge} - {p_name} ({country}) | Κατηγορία: {i_type}"
+                        )
                         st.caption(
-                            f"📅 Ημερομηνία Καταγραφής: **{date_logged}** | 📍 Χώρα: **{country}** | 👥 Αφορά: **{nat}** ({role})"
+                            f"📅 Ημερομηνία Καταγραφής: **{date_logged}** | 📍 Λιμάνι: **{p_name}** | Χώρα: **{country}** | 👥 Αφορά: **{nat}** ({role})"
                         )
 
                         st.markdown(f"**📝 Περιγραφή / Συμβάν:**\n{desc}")
@@ -267,10 +323,10 @@ def main():
 
                 else:
                     st.success(
-                        f"✅ Δεν βρέθηκαν καταγεγραμμένες δυσκολίες ή ειδικές ειδοποιήσεις για το λιμάνι **{search_port.upper()}** στη βάση."
+                        f"✅ Δεν βρέθηκαν καταγεγραμμένες δυσκολίες ή ειδικές ειδοποιήσεις για την αναζήτηση **'{search_query.upper()}'** στη βάση."
                     )
             else:
-                st.info("Παρακαλώ πληκτρολογήστε ένα όνομα λιμανιού.")
+                st.info("Παρακαλώ πληκτρολογήστε όνομα λιμανιού, χώρας ή λέξη-κλειδί.")
 
     # -----------------------------------------------------
     # TAB 2: LIVE ΕΞΩΤΕΡΙΚΕΣ ΠΛΗΡΟΦΟΡΙΕΣ (EXTERNAL API)
@@ -284,7 +340,7 @@ def main():
         ext_col1, ext_col2 = st.columns(2)
         with ext_col1:
             ext_country = st.text_input(
-                "Χώρα Προορισμού / Λιμανιού:", placeholder="e.g. Singapore, Egypt"
+                "Χώρα Προορισμού / Λιμανιού:", placeholder="e.g. Singapore, USA"
             )
         with ext_col2:
             ext_nat = st.selectbox(
@@ -345,7 +401,6 @@ def main():
                 )
 
             with f_col2:
-                # Χρήση multiselect για πολλαπλές κατηγορίες θέματος
                 input_types = st.multiselect(
                     "Κατηγορίες Θέματος* (Επιλέξτε μία ή περισσότερες)",
                     [
@@ -418,7 +473,7 @@ def main():
                         image_bytes,
                     )
                     st.success(
-                        f"Η εγγραφή για το λιμάνι {input_port.upper()} αποθηκεύτηκε με επιτυχία!"
+                        f"Η εγγραφή για το λιμάνι {input_port.upper()} ({input_country.upper()}) αποθηκεύτηκε με επιτυχία!"
                     )
                 else:
                     st.error(
