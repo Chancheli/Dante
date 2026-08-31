@@ -13,8 +13,8 @@ def check_password():
     if st.session_state["authenticated"]:
         return True
 
-    st.title("🔒 Πρόσβαση στο Σύστημα Crew Operations")
-    st.write("Παρακαλώ εισάγετε τον κωδικό πρόσβασης για να συνεχίσετε.")
+    st.title("🔒 Login to Dante")
+    st.write("Password")
 
     # Ορίζεις εδώ τον κωδικό που θέλεις
     CORRECT_PASSWORD = "crew2026"
