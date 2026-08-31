@@ -89,23 +89,49 @@ def get_logs_for_port(port_name, nationality=None, role=None):
 
 
 # ---------------------------------------------------------
-# 2. ΕΞΩΤΕΡΙΚΗ ΑΝΤΛΗΣΗ ΠΛΗΡΟΦΟΡΙΩΝ (External Data Integration)
+# 2. ΕΞΩΤΕΡΙΚΗ ΑΝΤΛΗΣΗ ΠΛΗΡΟΦΟΡΙΩΝ (Δυναμική Λογική / API)
 # ---------------------------------------------------------
 def fetch_external_travel_rules(destination_country, passport_nationality):
     """
-    Συνδέεται με εξωτερικό API για live ταξιδιωτικούς κανόνες.
+    Ελέγχει τους ταξιδιωτικούς κανόνες βάσει εθνικότητας και προορισμού.
     """
-    try:
-        # Προσομοίωση εξωτερικής απόκρισης για επίδειξη
-        return {
-            "status": "success",
-            "passport_validity": "Απαιτείται διαβατήριο σε ισχύ τουλάχιστον 6 μηνών.",
-            "visa_required": True,
-            "seaman_book_accepted": True,
-            "transit_rules": "Απαιτείται Letter of Guarantee & OK to Board πριν την επιβίβαση.",
-        }
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    dest = destination_country.strip().lower()
+    nat = passport_nationality.strip().lower()
+
+    visa_required = True
+    seaman_accepted = True
+    transit_info = "Απαιτείται Letter of Guarantee & OK to Board."
+
+    if nat == "greece":
+        if dest in ["singapore", "uk", "united kingdom"] or dest in [
+            "rotterdam",
+            "netherlands",
+            "germany",
+            "france",
+            "italy",
+            "spain",
+        ]:
+            visa_required = False
+            transit_info = "Ελεύθερη είσοδος / Transit χωρίς βίζα για διαμονή έως 90 ημέρες."
+        elif dest in ["usa", "united states"]:
+            visa_required = True
+            transit_info = "Απαιτείται ESTA ή US C1/D Visa για ναυτικούς."
+
+    elif nat == "philippines":
+        if dest in ["singapore"]:
+            visa_required = False
+            transit_info = "Ελεύθερη είσοδος για 30 ημέρες, αλλά για αλλαγή πληρώματος απαιτείται SG Arrival Card & OK to Board."
+        else:
+            visa_required = True
+            transit_info = "Απαιτείται OK to Board, Letter of Guarantee και προ-έγκριση βίζας/transit."
+
+    return {
+        "status": "success",
+        "passport_validity": "Απαιτείται διαβατήριο σε ισχύ τουλάχιστον 6 μηνών.",
+        "visa_required": visa_required,
+        "seaman_book_accepted": seaman_accepted,
+        "transit_rules": transit_info,
+    }
 
 
 # ---------------------------------------------------------
@@ -190,26 +216,28 @@ def main():
                         if days_old > 365:
                             time_warning = " ⏳ *(Καταγράφηκε πριν από 1+ χρόνο - Επιβεβαιώστε αν ισχύει ακόμα)*"
 
-                        box_type = (
-                            st.error
-                            if severity in ["High", "Critical"]
-                            else st.warning
-                            if severity == "Medium"
-                            else st.info
-                        )
-
-                        with box_type():
-                            st.markdown(
-                                f"**[Σοβαρότητα: {severity}] - {i_type}** | Ημερομηνία: {date_logged}{time_warning}"
+                        # Εμφάνιση εγγραφών ανάλογα με τη σοβαρότητα
+                        if severity in ["High", "Critical"]:
+                            st.error(
+                                f"**[Σοβαρότητα: {severity}] - {i_type}** | Ημερομηνία: {date_logged}{time_warning}\n\n"
+                                f"**Εθνικότητα:** {nat} | **Ιδιότητα:** {role} | **Χώρα:** {country}\n\n"
+                                f"**Περιγραφή/Δυσκολία:** {desc}\n\n"
+                                f"{'**Στοιχεία Πράκτορα / Tips:** ' + agent if agent else ''}"
                             )
-                            st.write(
-                                f"**Εθνικότητα:** {nat} | **Ιδιότητα:** {role} | **Χώρα:** {country}"
+                        elif severity == "Medium":
+                            st.warning(
+                                f"**[Σοβαρότητα: {severity}] - {i_type}** | Ημερομηνία: {date_logged}{time_warning}\n\n"
+                                f"**Εθνικότητα:** {nat} | **Ιδιότητα:** {role} | **Χώρα:** {country}\n\n"
+                                f"**Περιγραφή/Δυσκολία:** {desc}\n\n"
+                                f"{'**Στοιχεία Πράκτορα / Tips:** ' + agent if agent else ''}"
                             )
-                            st.write(f"**Περιγραφή/Δυσκολία:** {desc}")
-                            if agent:
-                                st.write(
-                                    f"**Στοιχεία Πράκτορα / Tips:** {agent}"
-                                )
+                        else:
+                            st.info(
+                                f"**[Σοβαρότητα: {severity}] - {i_type}** | Ημερομηνία: {date_logged}{time_warning}\n\n"
+                                f"**Εθνικότητα:** {nat} | **Ιδιότητα:** {role} | **Χώρα:** {country}\n\n"
+                                f"**Περιγραφή/Δυσκολία:** {desc}\n\n"
+                                f"{'**Στοιχεία Πράκτορα / Tips:** ' + agent if agent else ''}"
+                            )
                 else:
                     st.success(
                         f"✅ Δεν βρέθηκαν καταγεγραμμένες δυσκολίες ή ειδικές ειδοποιήσεις για το λιμάνι **{search_port.upper()}** στη βάση."
@@ -229,7 +257,7 @@ def main():
         ext_col1, ext_col2 = st.columns(2)
         with ext_col1:
             ext_country = st.text_input(
-                "Χώρα Προορισμού / Λιμανιού:", placeholder="e.g. Egypt"
+                "Χώρα Προορισμού / Λιμανιού:", placeholder="e.g. Singapore, Egypt"
             )
         with ext_col2:
             ext_nat = st.selectbox(
@@ -251,13 +279,16 @@ def main():
                     )
 
                     st.info(f"📌 **Ισχύς Διαβατηρίου:** {ext_data['passport_validity']}")
-                    st.warning(
-                        f"🛂 **Απαίτηση Βίζας:** {'Ναι' if ext_data['visa_required'] else 'Όχι'}"
-                    )
+
+                    if ext_data['visa_required']:
+                        st.error("🛂 **Απαίτηση Βίζας:** Ναι")
+                    else:
+                        st.success("🛂 **Απαίτηση Βίζας:** Όχι (Δεν απαιτείται βίζα)")
+
                     st.write(
                         f"📘 **Αποδοχή Ναυτικού Φυλλαδίου:** {'Ναι' if ext_data['seaman_book_accepted'] else 'Όχι'}"
                     )
-                    st.write(f"✈️ **Transit / OK to Board:** {ext_data['transit_rules']}")
+                    st.write(f"✈️ **Transit / Rules:** {ext_data['transit_rules']}")
                 else:
                     st.error("Αποτυχία σύνδεσης με την εξωτερική υπηρεσία.")
             else:
