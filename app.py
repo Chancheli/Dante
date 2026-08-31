@@ -1,6 +1,5 @@
 import sqlite3
 from datetime import datetime
-import requests
 import streamlit as st
 
 # ---------------------------------------------------------
@@ -21,11 +20,25 @@ def init_db():
             issue_type TEXT NOT NULL,
             severity TEXT NOT NULL,
             description TEXT NOT NULL,
+            required_docs TEXT,
             agent_details TEXT,
+            contact_email TEXT,
+            image_data BLOB,
             date_logged TEXT NOT NULL
         )
     """
     )
+
+    # Έλεγχος αν υπάρχουν τα νέα πεδία σε παλιά βάση
+    cursor.execute("PRAGMA table_info(port_logs)")
+    columns = [col[1] for col in cursor.fetchall()]
+    if "required_docs" not in columns:
+        cursor.execute("ALTER TABLE port_logs ADD COLUMN required_docs TEXT")
+    if "contact_email" not in columns:
+        cursor.execute("ALTER TABLE port_logs ADD COLUMN contact_email TEXT")
+    if "image_data" not in columns:
+        cursor.execute("ALTER TABLE port_logs ADD COLUMN image_data BLOB")
+
     conn.commit()
     conn.close()
 
@@ -38,7 +51,10 @@ def add_log(
     issue_type,
     severity,
     description,
+    required_docs,
     agent_details,
+    contact_email,
+    image_bytes,
 ):
     conn = sqlite3.connect("crew_port_rules.db")
     cursor = conn.cursor()
@@ -46,8 +62,8 @@ def add_log(
     cursor.execute(
         """
         INSERT INTO port_logs 
-        (port_name, country, nationality, role, issue_type, severity, description, agent_details, date_logged)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (port_name, country, nationality, role, issue_type, severity, description, required_docs, agent_details, contact_email, image_data, date_logged)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """,
         (
             port_name.strip().upper(),
@@ -57,7 +73,10 @@ def add_log(
             issue_type,
             severity,
             description,
+            required_docs,
             agent_details,
+            contact_email,
+            image_bytes,
             today_str,
         ),
     )
@@ -89,12 +108,9 @@ def get_logs_for_port(port_name, nationality=None, role=None):
 
 
 # ---------------------------------------------------------
-# 2. ΕΞΩΤΕΡΙΚΗ ΑΝΤΛΗΣΗ ΠΛΗΡΟΦΟΡΙΩΝ (Δυναμική Λογική / API)
+# 2. ΕΞΩΤΕΡΙΚΗ ΑΝΤΛΗΣΗ ΠΛΗΡΟΦΟΡΙΩΝ (API Mock / Rules)
 # ---------------------------------------------------------
 def fetch_external_travel_rules(destination_country, passport_nationality):
-    """
-    Ελέγχει τους ταξιδιωτικούς κανόνες βάσει εθνικότητας και προορισμού.
-    """
     dest = destination_country.strip().lower()
     nat = passport_nationality.strip().lower()
 
@@ -157,7 +173,7 @@ def main():
     )
 
     # -----------------------------------------------------
-    # TAB 1: ΑΝΑΖΗΤΗΣΗ & AUTOMATED ALERTS (INTERNAL DB)
+    # TAB 1: ΑΝΑΖΗΤΗΣΗ & AUTOMATED ALERTS
     # -----------------------------------------------------
     with tab1:
         st.subheader("Εσωτερικός Έλεγχος & Ιστορικό Εταιρείας")
@@ -165,7 +181,7 @@ def main():
         col1, col2, col3 = st.columns(3)
         with col1:
             search_port = st.text_input(
-                "Όνομα Λιμανιού (π.χ. Singapore, Rotterdam, Alexandria):"
+                "Όνομα Λιμανιού (π.χ. Singapore, Garyville, Suez):"
             )
         with col2:
             search_nat = st.selectbox(
@@ -206,38 +222,49 @@ def main():
                             i_type,
                             severity,
                             desc,
+                            req_docs,
                             agent,
+                            c_email,
+                            img_data,
                             date_logged,
                         ) = log
 
-                        log_date = datetime.strptime(date_logged, "%Y-%m-%d")
-                        days_old = (datetime.now() - log_date).days
-                        time_warning = ""
-                        if days_old > 365:
-                            time_warning = " ⏳ *(Καταγράφηκε πριν από 1+ χρόνο - Επιβεβαιώστε αν ισχύει ακόμα)*"
+                        st.markdown("---")
 
-                        # Εμφάνιση εγγραφών ανάλογα με τη σοβαρότητα
-                        if severity in ["High", "Critical"]:
-                            st.error(
-                                f"**[Σοβαρότητα: {severity}] - {i_type}** | Ημερομηνία: {date_logged}{time_warning}\n\n"
-                                f"**Εθνικότητα:** {nat} | **Ιδιότητα:** {role} | **Χώρα:** {country}\n\n"
-                                f"**Περιγραφή/Δυσκολία:** {desc}\n\n"
-                                f"{'**Στοιχεία Πράκτορα / Tips:** ' + agent if agent else ''}"
-                            )
-                        elif severity == "Medium":
-                            st.warning(
-                                f"**[Σοβαρότητα: {severity}] - {i_type}** | Ημερομηνία: {date_logged}{time_warning}\n\n"
-                                f"**Εθνικότητα:** {nat} | **Ιδιότητα:** {role} | **Χώρα:** {country}\n\n"
-                                f"**Περιγραφή/Δυσκολία:** {desc}\n\n"
-                                f"{'**Στοιχεία Πράκτορα / Tips:** ' + agent if agent else ''}"
-                            )
-                        else:
-                            st.info(
-                                f"**[Σοβαρότητα: {severity}] - {i_type}** | Ημερομηνία: {date_logged}{time_warning}\n\n"
-                                f"**Εθνικότητα:** {nat} | **Ιδιότητα:** {role} | **Χώρα:** {country}\n\n"
-                                f"**Περιγραφή/Δυσκολία:** {desc}\n\n"
-                                f"{'**Στοιχεία Πράκτορα / Tips:** ' + agent if agent else ''}"
-                            )
+                        header_badge = (
+                            f"🔴 **[Σοβαρότητα: {severity}]**"
+                            if severity in ["High", "Critical"]
+                            else f"🟡 **[Σοβαρότητα: {severity}]**"
+                            if severity == "Medium"
+                            else f"🔵 **[Σοβαρότητα: {severity}]**"
+                        )
+
+                        st.markdown(f"### {header_badge} - {i_type}")
+                        st.caption(
+                            f"📅 Ημερομηνία Καταγραφής: **{date_logged}** | 📍 Χώρα: **{country}** | 👥 Αφορά: **{nat}** ({role})"
+                        )
+
+                        st.markdown(f"**📝 Περιγραφή / Συμβάν:**\n{desc}")
+
+                        if req_docs:
+                            st.markdown("##### 📋 Απαιτούμενα Έγγραφα / Checklist:")
+                            docs_list = [
+                                d.strip() for d in req_docs.split(",") if d.strip()
+                            ]
+                            for doc in docs_list:
+                                st.markdown(f"- 📄 {doc}")
+
+                        if agent or c_email:
+                            st.markdown("##### 📞 Πράκτορας & Επικοινωνία:")
+                            if agent:
+                                st.write(f"**Σημειώσεις Πράκτορα:** {agent}")
+                            if c_email:
+                                st.write(f"**Email / Contact:** `{c_email}`")
+
+                        if img_data:
+                            st.markdown("##### 🖼️ Επισυναπτόμενο Screenshot / Email:")
+                            st.image(img_data, use_container_width=True)
+
                 else:
                     st.success(
                         f"✅ Δεν βρέθηκαν καταγεγραμμένες δυσκολίες ή ειδικές ειδοποιήσεις για το λιμάνι **{search_port.upper()}** στη βάση."
@@ -280,7 +307,7 @@ def main():
 
                     st.info(f"📌 **Ισχύς Διαβατηρίου:** {ext_data['passport_validity']}")
 
-                    if ext_data['visa_required']:
+                    if ext_data["visa_required"]:
                         st.error("🛂 **Απαίτηση Βίζας:** Ναι")
                     else:
                         st.success("🛂 **Απαίτηση Βίζας:** Όχι (Δεν απαιτείται βίζα)")
@@ -300,14 +327,14 @@ def main():
     with tab3:
         st.subheader("Καταχώρηση Νέας Σημείωσης / Δυσκολίας")
         st.write(
-            "Συμπληρώστε τα στοιχεία όταν συναντάτε μια νέα απαίτηση, καθυστέρηση ή ιδιαιτερότητα σε κάποιο λιμάνι."
+            "Συμπληρώστε τα στοιχεία, ανεβάστε screenshots e-mail και ορίστε τη λίστα απαιτούμενων εγγράφων."
         )
 
         with st.form("add_log_form", clear_on_submit=True):
             f_col1, f_col2 = st.columns(2)
             with f_col1:
-                input_port = st.text_input("Όνομα Λιμανιού* (π.χ. Suez)")
-                input_country = st.text_input("Χώρα* (π.χ. Egypt)")
+                input_port = st.text_input("Όνομα Λιμανιού* (π.χ. Garyville)")
+                input_country = st.text_input("Χώρα* (π.χ. USA)")
                 input_nat = st.selectbox(
                     "Εθνικότητα που αφορά*",
                     ["Όλες", "Έλληνας", "Φιλιππινέζος"],
@@ -318,8 +345,9 @@ def main():
                 )
 
             with f_col2:
-                input_type = st.selectbox(
-                    "Κατηγορία Θέματος*",
+                # Χρήση multiselect για πολλαπλές κατηγορίες θέματος
+                input_types = st.multiselect(
+                    "Κατηγορίες Θέματος* (Επιλέξτε μία ή περισσότερες)",
                     [
                         "OK to Board Issue",
                         "Visa / Schengen / US C1-D",
@@ -341,35 +369,60 @@ def main():
                 )
                 severity_clean = input_severity.split()[0]
 
+            st.markdown("---")
             input_desc = st.text_area(
                 "Περιγραφή Συμβάντος / Κανόνα*",
-                placeholder="π.χ. Απαιτείται έγκριση OK to Board 72 ώρες πριν. Οι τεχνικοί με απλό διαβατήριο χρειάζονται ειδική βίζα πριν την αναχώρηση.",
+                placeholder="Περιγράψτε τι συνέβη ή ποιος κανόνας ισχύει...",
             )
-            input_agent = st.text_area(
-                "Στοιχεία Πράκτορα / Σημειώσεις",
-                placeholder="π.χ. Wilhelmsen Suez - Ο κ. Αχμέντ ζητάει πάντα αντίγραφο συμβολαίου στο mail...",
+
+            input_docs = st.text_input(
+                "📋 Απαιτούμενα Έγγραφα (διαχωρίστε με κόμμα)",
+                placeholder="π.χ. US C1/D Visa, ESTA, OK to Board Letter, Guarantee Letter",
+            )
+
+            col_agent1, col_agent2 = st.columns(2)
+            with col_agent1:
+                input_agent = st.text_area(
+                    "Στοιχεία Πράκτορα / Σημειώσεις",
+                    placeholder="Όνομα πρακτορείου, οδηγίες...",
+                )
+            with col_agent2:
+                input_email = st.text_input(
+                    "📧 Contact Email Πράκτορα / Αρχής",
+                    placeholder="agent@shipping-agency.com",
+                )
+
+            uploaded_file = st.file_uploader(
+                "🖼️ Ανέβασμα Screenshot / Email (JPG, PNG)",
+                type=["png", "jpg", "jpeg"],
             )
 
             submitted = st.form_submit_button("Αποθήκευση στη Βάση")
 
             if submitted:
-                if input_port and input_country and input_desc:
+                if input_port and input_country and input_desc and input_types:
+                    image_bytes = uploaded_file.read() if uploaded_file else None
+                    types_str = ", ".join(input_types)
+
                     add_log(
                         input_port,
                         input_country,
                         input_nat,
                         input_role,
-                        input_type,
+                        types_str,
                         severity_clean,
                         input_desc,
+                        input_docs,
                         input_agent,
+                        input_email,
+                        image_bytes,
                     )
                     st.success(
                         f"Η εγγραφή για το λιμάνι {input_port.upper()} αποθηκεύτηκε με επιτυχία!"
                     )
                 else:
                     st.error(
-                        "Παρακαλώ συμπληρώστε όλα τα υποχρεωτικά πεδία με αστερίσκο (*)."
+                        "Παρακαλώ συμπληρώστε όλα τα υποχρεωτικά πεδία με αστερίσκο (*) και επιλέξτε τουλάχιστον μία Κατηγορία Θέματος."
                     )
 
 
