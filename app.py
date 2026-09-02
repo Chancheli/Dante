@@ -1,6 +1,9 @@
+import io
 import sqlite3
 from datetime import datetime
+import pandas as pd
 import streamlit as st
+
 
 # ---------------------------------------------------------
 # 0. ΑΣΦΑΛΕΙΑ & THEMING
@@ -121,13 +124,23 @@ def apply_custom_theme():
         .custom-card {{
             background-color: {card_bg} !important;
             border: 1px solid {border_color} !important;
-            border-radius: 10px !important;
-            padding: 16px !important;
-            margin-bottom: 16px !important;
+            border-radius: 12px !important;
+            padding: 18px !important;
+            margin-bottom: 15px !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
         }}
         
-        .stAlert {{
-            border-radius: 10px !important;
+        .badge-critical {{
+            background-color: #EF4444; color: white; padding: 3px 10px; border-radius: 12px; font-weight: bold; font-size: 0.82rem;
+        }}
+        .badge-high {{
+            background-color: #F97316; color: white; padding: 3px 10px; border-radius: 12px; font-weight: bold; font-size: 0.82rem;
+        }}
+        .badge-medium {{
+            background-color: #EAB308; color: black; padding: 3px 10px; border-radius: 12px; font-weight: bold; font-size: 0.82rem;
+        }}
+        .badge-low {{
+            background-color: #10B981; color: white; padding: 3px 10px; border-radius: 12px; font-weight: bold; font-size: 0.82rem;
         }}
     </style>
     """
@@ -192,7 +205,9 @@ def init_db():
     columns = [col[1] for col in cursor.fetchall()]
 
     if "signer_type" not in columns:
-        cursor.execute("ALTER TABLE port_logs ADD COLUMN signer_type TEXT DEFAULT 'BOTH'")
+        cursor.execute(
+            "ALTER TABLE port_logs ADD COLUMN signer_type TEXT DEFAULT 'BOTH'"
+        )
     if "desc_on" not in columns:
         cursor.execute("ALTER TABLE port_logs ADD COLUMN desc_on TEXT")
     if "desc_off" not in columns:
@@ -375,98 +390,144 @@ def search_logs(query_text, nationality=None, role=None):
 
 
 # ---------------------------------------------------------
-# 2. HELPER FUNCTION ΓΙΑ ΕΜΦΑΝΙΣΗ ΚΑΡΤΕΛΩΝ (CARDS)
+# 2. HELPER FUNCTIONS: UI COMPONENTS
 # ---------------------------------------------------------
-def render_log_cards(logs_list, filter_type="ALL"):
-    filtered = []
-    for log in logs_list:
-        desc_on = log[9] if log[9] else ""
-        desc_off = log[10] if log[10] else ""
-        docs_on = log[12] if log[12] else ""
-        docs_off = log[13] if log[13] else ""
-        old_desc = log[8] if log[8] else ""
+def get_severity_badge(severity):
+    sev = severity.upper()
+    if "CRITICAL" in sev:
+        return '<span class="badge-critical">🔴 CRITICAL</span>'
+    elif "HIGH" in sev:
+        return '<span class="badge-high">🟠 HIGH</span>'
+    elif "MEDIUM" in sev:
+        return '<span class="badge-medium">🟡 MEDIUM</span>'
+    else:
+        return '<span class="badge-low">🟢 LOW</span>'
 
-        if filter_type == "ON":
-            if (desc_on and desc_on.strip()) or (docs_on and docs_on.strip()) or (old_desc and old_desc.strip()):
-                filtered.append(log)
-        elif filter_type == "OFF":
-            if (desc_off and desc_off.strip()) or (docs_off and docs_off.strip()) or (old_desc and old_desc.strip()):
-                filtered.append(log)
-        else:
-            filtered.append(log)
 
-    if not filtered:
-        st.info("Δεν υπάρχουν καταχωρημένες σημειώσεις για αυτή την κατηγορία.")
-        return
+def render_metrics_summary(logs):
+    total_logs = len(logs)
+    total_ports = len(set([l[1] for l in logs]))
+    total_countries = len(set([l[2] for l in logs]))
+    critical_count = len(
+        [
+            l
+            for l in logs
+            if "CRITICAL" in str(l[7]).upper() or "HIGH" in str(l[7]).upper()
+        ]
+    )
 
-    for log in filtered:
-        log_id = log[0]
-        p_name = log[1]
-        country = log[2]
-        nat = log[4]
-        role = log[5]
-        i_type = log[6]
-        severity = log[7]
-        old_desc = log[8] if log[8] else ""
-        desc_on = log[9] if log[9] else ""
-        desc_off = log[10] if log[10] else ""
-        old_docs = log[11] if log[11] else ""
-        docs_on = log[12] if log[12] else ""
-        docs_off = log[13] if log[13] else ""
-        agent = log[14] if log[14] else ""
-        c_email = log[15] if log[15] else ""
-        date_logged = log[16] if log[16] else ""
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("📍 Καταγεγραμμένα Λιμάνια", total_ports)
+    m2.metric("🌍 Χώρες", total_countries)
+    m3.metric("📝 Σύνολο Οδηγιών", total_logs)
+    m4.metric(
+        "⚠️ Υψηλού Κινδύνου / Alerts", critical_count, delta_color="inverse"
+    )
 
-        st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-        
-        col_title, col_badge = st.columns([3, 1])
-        with col_title:
-            st.markdown(f"### 📍 {p_name} ({country})")
-            st.caption(f"📅 Ημερομηνία: **{date_logged}** | 👥 Αφορά: **{nat}** ({role})")
-        with col_badge:
-            st.markdown(f"**Σοβαρότητα:** `{severity}`")
-            st.markdown(f"**Θέμα:** `{i_type}`")
 
-        # Εμφάνιση Οδηγιών & Εγγράφων On-signer
-        if filter_type in ["ALL", "ON"]:
-            if (desc_on and desc_on.strip()) or (docs_on and docs_on.strip()):
-                st.markdown("🟢 **ON-SIGNERS (Επιβίβαση):**")
-                if desc_on and desc_on.strip():
-                    st.info(f"**Οδηγίες:**\n{desc_on}")
-                if docs_on and docs_on.strip():
-                    st.markdown("**📋 Απαιτούμενα Έγγραφα (On):**")
-                    for doc in [d.strip() for d in docs_on.split(",") if d.strip()]:
-                        st.markdown(f"- 📄 {doc}")
+def render_single_log_card(log):
+    """Εμφανίζει μία συγκεκριμένη υποθετική εγγραφή με καθαρή διάταξη On/Off δίπλα-δίπλα"""
+    log_id = log[0]
+    p_name = log[1]
+    country = log[2]
+    nat = log[4]
+    role = log[5]
+    i_type = log[6]
+    severity = log[7]
+    old_desc = log[8] if log[8] else ""
+    desc_on = log[9] if log[9] else ""
+    desc_off = log[10] if log[10] else ""
+    old_docs = log[11] if log[11] else ""
+    docs_on = log[12] if log[12] else ""
+    docs_off = log[13] if log[13] else ""
+    agent = log[14] if log[14] else ""
+    c_email = log[15] if log[15] else ""
+    date_logged = log[16] if log[16] else ""
 
-        # Εμφάνιση Οδηγιών & Εγγράφων Off-signer
-        if filter_type in ["ALL", "OFF"]:
-            if (desc_off and desc_off.strip()) or (docs_off and docs_off.strip()):
-                st.markdown("🔴 **OFF-SIGNERS (Αποβίβαση):**")
-                if desc_off and desc_off.strip():
-                    st.warning(f"**Οδηγίες:**\n{desc_off}")
-                if docs_off and docs_off.strip():
-                    st.markdown("**📋 Απαιτούμενα Έγγραφα (Off):**")
-                    for doc in [d.strip() for d in docs_off.split(",") if d.strip()]:
-                        st.markdown(f"- 📄 {doc}")
+    st.markdown('<div class="custom-card">', unsafe_allow_html=True)
 
-        # Παλαιότερες σημειώσεις
-        if old_desc and old_desc.strip() and not (desc_on or desc_off):
-            st.markdown("📝 **Γενική Περιγραφή / Οδηγίες:**")
-            st.write(old_desc)
-        if old_docs and old_docs.strip() and not (docs_on or docs_off):
-            st.markdown("📋 **Γενικά Απαιτούμενα Έγγραφα:**")
-            for doc in [d.strip() for d in old_docs.split(",") if d.strip()]:
+    c_head1, c_head2 = st.columns([3, 1])
+    with c_head1:
+        st.markdown(
+            f"**Case #{log_id}:** 👥 **{nat}** | 💼 **{role}** | 🏷️ `{i_type}`"
+        )
+        st.caption(f"📅 Ημερομηνία Καταγραφής: {date_logged}")
+    with c_head2:
+        st.markdown(get_severity_badge(severity), unsafe_allow_html=True)
+
+    col_left, col_right = st.columns(2)
+
+    # On-signers Column
+    with col_left:
+        st.markdown("🟢 **ON-SIGNERS (Επιβίβαση)**")
+        if desc_on and desc_on.strip():
+            st.info(f"**Οδηγίες:**\n{desc_on}")
+        if docs_on and docs_on.strip():
+            st.markdown("**📋 Απαιτούμενα Έγγραφα:**")
+            for doc in [d.strip() for d in docs_on.split(",") if d.strip()]:
                 st.markdown(f"- 📄 {doc}")
+        if not (desc_on or docs_on):
+            st.caption("— Καμία ειδική οδηγία επιβίβασης —")
 
-        if (agent and agent.strip()) or (c_email and c_email.strip()):
-            st.markdown("---")
-            st.markdown("##### 📞 Πράκτορας & Επικοινωνία:")
-            if agent and agent.strip():
-                st.write(f"**Σημειώσεις Πράκτορα:** {agent}")
-            if c_email and c_email.strip():
-                st.write(f"**Email / Contact:** `{c_email}`")
+    # Off-signers Column
+    with col_right:
+        st.markdown("🔴 **OFF-SIGNERS (Αποβίβαση)**")
+        if desc_off and desc_off.strip():
+            st.warning(f"**Οδηγίες:**\n{desc_off}")
+        if docs_off and docs_off.strip():
+            st.markdown("**📋 Απαιτούμενα Έγγραφα:**")
+            for doc in [d.strip() for d in docs_off.split(",") if d.strip()]:
+                st.markdown(f"- 📄 {doc}")
+        if not (desc_off or docs_off):
+            st.caption("— Καμία ειδική οδηγία αποβίβασης —")
 
-        st.markdown('</div>', unsafe_allow_html=True)
+    # Fallback για παλιές εγγραφές
+    if old_desc and old_desc.strip() and not (desc_on or desc_off):
+        st.markdown("📝 **Γενική Περιγραφή / Οδηγίες:**")
+        st.write(old_desc)
+    if old_docs and old_docs.strip() and not (docs_on or docs_off):
+        st.markdown("📋 **Γενικά Απαιτούμενα Έγγραφα:**")
+        for doc in [d.strip() for d in old_docs.split(",") if d.strip()]:
+            st.markdown(f"- 📄 {doc}")
+
+    if (agent and agent.strip()) or (c_email and c_email.strip()):
+        st.markdown("---")
+        st.markdown("##### 📞 Στοιχεία Πράκτορα & Επικοινωνία")
+        if agent and agent.strip():
+            st.write(f"**Σημειώσεις Πράκτορα:** {agent}")
+        if c_email and c_email.strip():
+            st.write(f"**Email / Contact:** `{c_email}`")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def generate_excel_export(logs):
+    df = pd.DataFrame(
+        logs,
+        columns=[
+            "ID",
+            "Port",
+            "Country",
+            "Signer Type",
+            "Nationality",
+            "Role",
+            "Issue Type",
+            "Severity",
+            "General Desc",
+            "Desc ON",
+            "Desc OFF",
+            "General Docs",
+            "Docs ON",
+            "Docs OFF",
+            "Agent Details",
+            "Contact Email",
+            "Date Logged",
+        ],
+    )
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Port Rules")
+    return buffer.getvalue()
 
 
 # ---------------------------------------------------------
@@ -474,7 +535,9 @@ def render_log_cards(logs_list, filter_type="ALL"):
 # ---------------------------------------------------------
 def main():
     st.set_page_config(
-        page_title="Crew Operations & Port Intelligence", layout="wide"
+        page_title="Crew Operations & Port Intelligence",
+        page_icon="⚓",
+        layout="wide",
     )
 
     apply_custom_theme()
@@ -485,6 +548,19 @@ def main():
     init_db()
 
     with st.sidebar:
+        st.title("⚓ Operations Hub")
+        st.markdown("---")
+
+        all_db_logs = fetch_all_logs()
+        if all_db_logs:
+            excel_data = generate_excel_export(all_db_logs)
+            st.download_button(
+                label="📥 Εξαγωγή Βάσης σε Excel",
+                data=excel_data,
+                file_name=f"Crew_Port_Rules_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+
         st.markdown("---")
         st.write("👤 Συνδεδεμένος Χρήστης")
         if st.button("Αποσύνδεση (Logout)"):
@@ -492,9 +568,15 @@ def main():
             st.rerun()
 
     st.title("⚓ Crew Operations & Port Intelligence System")
-    st.write(
-        "Σύστημα παρακολούθησης κανόνων λιμανιών, ταξιδιωτικών απαιτήσεων & ιστορικού συμβάντων."
+    st.caption(
+        "Κεντρικό σύστημα παρακολούθησης κανόνων λιμανιών, γραφειοκρατίας & ταξιδιωτικών απαιτήσεων."
     )
+
+    all_logs = fetch_all_logs()
+    if all_logs:
+        render_metrics_summary(all_logs)
+
+    st.markdown("<br>", unsafe_allow_html=True)
 
     tab1, tab2, tab3, tab4 = st.tabs(
         [
@@ -509,13 +591,13 @@ def main():
     # TAB 1: ΑΝΑΖΗΤΗΣΗ & ALERTS
     # -----------------------------------------------------
     with tab1:
-        st.subheader("Εσωτερικός Έλεγχος & Ιστορικό Εταιρείας")
+        st.subheader("🔍 Έλεγχος Λιμανιού & Ιστορικού")
 
         col1, col2, col3 = st.columns(3)
         with col1:
             search_query = st.text_input(
-                "🔍 Λιμάνι, Χώρα ή Λέξη-Κλειδί:",
-                placeholder="e.g. USA, Singapore, Garyville",
+                "Λιμάνι, Χώρα ή Λέξη-Κλειδί:",
+                placeholder="e.g. Singapore, Garyville, US C1/D",
             )
         with col2:
             search_nat = st.selectbox(
@@ -526,7 +608,7 @@ def main():
                 "Ιδιότητα:", ["Όλοι", "Πλήρωμα", "Superintendent", "Τεχνικός"]
             )
 
-        if st.button("Έλεγχος Ιστορικού"):
+        if st.button("🔎 Έλεγχος Ιστορικού"):
             if search_query:
                 logs = search_logs(search_query, search_nat, search_role)
 
@@ -534,35 +616,20 @@ def main():
                     st.success(
                         f"⚠️ Βρέθηκαν {len(logs)} καταγεγραμμένες σημειώσεις για '{search_query.upper()}'."
                     )
-
-                    sub_on, sub_off, sub_all = st.tabs(
-                        [
-                            "🟢 On-signers (Επιβίβαση)",
-                            "🔴 Off-signers (Αποβίβαση)",
-                            "📋 Όλα τα αποτελέσματα",
-                        ]
-                    )
-
-                    with sub_on:
-                        render_log_cards(logs, filter_type="ON")
-
-                    with sub_off:
-                        render_log_cards(logs, filter_type="OFF")
-
-                    with sub_all:
-                        render_log_cards(logs, filter_type="ALL")
-
+                    for log in logs:
+                        render_single_log_card(log)
                 else:
                     st.info("Δεν βρέθηκαν αποτελέσματα στη βάση.")
             else:
-                st.info("Παρακαλώ πληκτρολογήστε όνομα λιμανιού, χώρας ή λέξη-κλειδί.")
+                st.info(
+                    "Παρακαλώ πληκτρολογήστε όνομα λιμανιού, χώρας ή λέξη-κλειδί."
+                )
 
     # -----------------------------------------------------
-    # TAB 2: ΕΥΡΕΤΗΡΙΟ ΧΩΡΩΝ
+    # TAB 2: ΕΥΡΕΤΗΡΙΟ ΧΩΡΩΝ (ΟΜΑΔΟΠΟΙΗΜΕΝΟ ΑΝΑ ΛΙΜΑΝΙ)
     # -----------------------------------------------------
     with tab2:
-        st.subheader("🌍 Κατάλογος Χωρών & Συγκεντρωτικοί Κανόνες")
-        all_logs = fetch_all_logs()
+        st.subheader("🌍 Κατάλογος Χωρών & Οργάνωση ανά Λιμάνι")
 
         if all_logs:
             countries = sorted(list(set([l[2] for l in all_logs if l[2]])))
@@ -574,44 +641,51 @@ def main():
                 )
 
                 if selected_country:
-                    country_logs = [l for l in all_logs if l[2] == selected_country]
-                    ports_in_country = sorted(list(set([l[1] for l in country_logs])))
+                    country_logs = [
+                        l for l in all_logs if l[2] == selected_country
+                    ]
+                    ports_in_country = sorted(
+                        list(set([l[1] for l in country_logs]))
+                    )
 
                     st.markdown(
-                        f"### 📍 Χώρα: **{selected_country}** ({len(ports_in_country)} Λιμάνια: `{', '.join(ports_in_country)}`)"
+                        f"### 📍 Χώρα: **{selected_country}** ({len(ports_in_country)} Λιμάνια)"
+                    )
+                    st.write(
+                        "Πατήστε σε ένα λιμάνι για να δείτε τις καταχωρημένες υποθέσεις του:"
                     )
 
-                    c_tab_on, c_tab_off, c_tab_all = st.tabs(
-                        [
-                            "🟢 On-signers (Επιβίβαση)",
-                            "🔴 Off-signers (Αποβίβαση)",
-                            "📋 Όλα τα Λιμάνια Χώρας",
+                    # Ομαδοποίηση και προβολή ανά Λιμάνι
+                    for port in ports_in_country:
+                        port_specific_logs = [
+                            l for l in country_logs if l[1] == port
                         ]
-                    )
 
-                    with c_tab_on:
-                        render_log_cards(country_logs, filter_type="ON")
-
-                    with c_tab_off:
-                        render_log_cards(country_logs, filter_type="OFF")
-
-                    with c_tab_all:
-                        render_log_cards(country_logs, filter_type="ALL")
+                        with st.expander(
+                            f"⚓ **ΛΙΜΑΝΙ: {port}** ({len(port_specific_logs)} Υποθέσεις)",
+                            expanded=True,
+                        ):
+                            for log in port_specific_logs:
+                                render_single_log_card(log)
             else:
                 st.info("Δεν έχουν καταχωρηθεί ακόμη χώρες.")
         else:
-            st.info("⚠️ Η βάση δεδομένων είναι ακόμα κενή. Προσθέστε μια καταχώρηση στο Tab '➕ Νέα Καταχώρηση'.")
+            st.info(
+                "⚠️ Η βάση δεδομένων είναι ακόμα κενή. Προσθέστε μια καταχώρηση στο Tab '➕ Νέα Καταχώρηση'."
+            )
 
     # -----------------------------------------------------
     # TAB 3: ΝΕΑ ΚΑΤΑΧΩΡΗΣΗ
     # -----------------------------------------------------
     with tab3:
-        st.subheader("Καταχώρηση Νέων Οδηγιών / Δυσκολιών")
+        st.subheader("➕ Καταχώρηση Νέων Οδηγιών / Δυσκολιών")
 
         with st.form("add_log_form", clear_on_submit=True):
             f_col1, f_col2 = st.columns(2)
             with f_col1:
-                input_port = st.text_input("Όνομα Λιμανιού* (π.χ. Singapore, Garyville)")
+                input_port = st.text_input(
+                    "Όνομα Λιμανιού* (π.χ. Singapore, Garyville)"
+                )
                 input_country = st.text_input("Χώρα* (π.χ. Singapore, USA)")
                 input_nat = st.selectbox(
                     "Εθνικότητα*", ["Όλες", "Έλληνας", "Φιλιππινέζος"]
@@ -647,7 +721,7 @@ def main():
                 severity_clean = input_severity.split()[0]
 
             st.markdown("---")
-            st.markdown("#### 📝 Οδηγίες & Απαιτούμενα Έγγραφα (Συμπληρώστε όποιο ισχύει)")
+            st.markdown("#### 📝 Οδηγίες & Απαιτούμενα Έγγραφα")
 
             col_on, col_off = st.columns(2)
             with col_on:
@@ -682,7 +756,17 @@ def main():
             submitted = st.form_submit_button("💾 Αποθήκευση στη Βάση")
 
             if submitted:
-                if input_port and input_country and input_types and (input_desc_on or input_desc_off or input_docs_on or input_docs_off):
+                if (
+                    input_port
+                    and input_country
+                    and input_types
+                    and (
+                        input_desc_on
+                        or input_desc_off
+                        or input_docs_on
+                        or input_docs_off
+                    )
+                ):
                     types_str = ", ".join(input_types)
                     add_log(
                         input_port,
@@ -701,7 +785,9 @@ def main():
                     st.success("✅ Η εγγραφή αποθηκεύτηκε επιτυχώς στη βάση!")
                     st.rerun()
                 else:
-                    st.error("❌ Παρακαλώ συμπληρώστε τα υποχρεωτικά πεδία (*) και τουλάχιστον μία οδηγία ή έγγραφο (On-signer ή Off-signer).")
+                    st.error(
+                        "❌ Παρακαλώ συμπληρώστε τα υποχρεωτικά πεδία (*) και τουλάχιστον μία οδηγία ή έγγραφο."
+                    )
 
     # -----------------------------------------------------
     # TAB 4: ΕΠΕΞΕΡΓΑΣΙΑ & ΔΙΑΓΡΑΦΗ
@@ -725,7 +811,6 @@ def main():
             e_id = selected_log[0]
             e_port = selected_log[1]
             e_country = selected_log[2]
-            e_signer_type = selected_log[3]
             e_nat = selected_log[4]
             e_role = selected_log[5]
             e_type = selected_log[6]
@@ -762,8 +847,14 @@ def main():
                     edit_role = st.selectbox(
                         "Ιδιότητα",
                         ["Όλοι", "Πλήρωμα", "Superintendent", "Τεχνικός"],
-                        index=["Όλοι", "Πλήρωμα", "Superintendent", "Τεχνικός"].index(e_role)
-                        if e_role in ["Όλοι", "Πλήρωμα", "Superintendent", "Τεχνικός"]
+                        index=[
+                            "Όλοι",
+                            "Πλήρωμα",
+                            "Superintendent",
+                            "Τεχνικός",
+                        ].index(e_role)
+                        if e_role
+                        in ["Όλοι", "Πλήρωμα", "Superintendent", "Τεχνικός"]
                         else 0,
                     )
 
@@ -776,11 +867,17 @@ def main():
                         "Agent Negligence / Delay",
                         "Άλλο",
                     ]
-                    current_cats = [c.strip() for c in e_type.split(",") if c.strip() in all_categories]
+                    current_cats = [
+                        c.strip()
+                        for c in e_type.split(",")
+                        if c.strip() in all_categories
+                    ]
                     edit_types = st.multiselect(
                         "Κατηγορίες Θέματος",
                         all_categories,
-                        default=current_cats if current_cats else [all_categories[0]],
+                        default=current_cats
+                        if current_cats
+                        else [all_categories[0]],
                     )
 
                     sev_index = 0
@@ -842,9 +939,13 @@ def main():
 
                 col_btn1, col_btn2 = st.columns([1, 1])
                 with col_btn1:
-                    update_submitted = st.form_submit_button("💾 Ενημέρωση Εγγραφής")
+                    update_submitted = st.form_submit_button(
+                        "💾 Ενημέρωση Εγγραφής"
+                    )
                 with col_btn2:
-                    delete_submitted = st.form_submit_button("🗑️ Διαγραφή Εγγραφής")
+                    delete_submitted = st.form_submit_button(
+                        "🗑️ Διαγραφή Εγγραφής"
+                    )
 
                 if update_submitted:
                     types_str = ", ".join(edit_types)
