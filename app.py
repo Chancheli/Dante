@@ -1,7 +1,6 @@
+import sqlite3
 from datetime import datetime
-import pandas as pd
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 
 # ---------------------------------------------------------
 # 0. ΑΣΦΑΛΕΙΑ / PASSWORD CHECK
@@ -31,15 +30,43 @@ def check_password():
 
 
 # ---------------------------------------------------------
-# 1. ΣΥΝΔΕΣΗ ΜΕ GOOGLE SHEETS
+# 1. ΒΑΣΗ ΔΕΔΟΜΕΝΩΝ (SQLite Setup)
 # ---------------------------------------------------------
-def get_data_from_gsheets(conn):
-    """Διαβάζει τα δεδομένα από το Google Sheet."""
-    return conn.read(ttl=0)
+def init_db():
+    conn = sqlite3.connect("crew_port_rules.db")
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS port_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            port_name TEXT NOT NULL,
+            country TEXT NOT NULL,
+            signer_type TEXT NOT NULL,
+            nationality TEXT NOT NULL,
+            role TEXT NOT NULL,
+            issue_type TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            description TEXT NOT NULL,
+            required_docs TEXT,
+            agent_details TEXT,
+            contact_email TEXT,
+            date_logged TEXT NOT NULL
+        )
+    """
+    )
+
+    # Έλεγχος & Αυτόματη Αναβάθμιση Πεδίων
+    cursor.execute("PRAGMA table_info(port_logs)")
+    columns = [col[1] for col in cursor.fetchall()]
+    if "signer_type" not in columns:
+        cursor.execute("ALTER TABLE port_logs ADD COLUMN signer_type TEXT DEFAULT 'Και τα δύο'")
+
+    conn.commit()
+    conn.close()
 
 
-def add_log_to_gsheets(
-    conn,
+def add_log(
     port_name,
     country,
     signer_type,
@@ -52,39 +79,103 @@ def add_log_to_gsheets(
     agent_details,
     contact_email,
 ):
-    """Προσθέτει μια νέα γραμμή στο Google Sheet."""
-    df = get_data_from_gsheets(conn)
+    conn = sqlite3.connect("crew_port_rules.db")
+    cursor = conn.cursor()
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    cursor.execute(
+        """
+        INSERT INTO port_logs 
+        (port_name, country, signer_type, nationality, role, issue_type, severity, description, required_docs, agent_details, contact_email, date_logged)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """,
+        (
+            port_name.strip().upper(),
+            country.strip().upper(),
+            signer_type,
+            nationality,
+            role,
+            issue_type,
+            severity,
+            description,
+            required_docs,
+            agent_details,
+            contact_email,
+            today_str,
+        ),
+    )
+    conn.commit()
+    conn.close()
 
-    new_row = {
-        "Port": port_name.strip().upper(),
-        "Country": country.strip().upper(),
-        "Signer_Type": signer_type,  # On-signer / Off-signer / Και τα δύο
-        "Nationality": nationality,
-        "Role": role,
-        "Issue_Type": issue_type,
-        "Severity": severity,
-        "Description": description,
-        "Required_Docs": required_docs,
-        "Agent_Details": agent_details,
-        "Contact_Email": contact_email,
-        "Date": datetime.now().strftime("%Y-%m-%d"),
-    }
 
-    updated_df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-    conn.update(data=updated_df)
+def fetch_all_logs():
+    conn = sqlite3.connect("crew_port_rules.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM port_logs ORDER BY id DESC")
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+
+def search_logs(query_text, nationality=None, role=None):
+    conn = sqlite3.connect("crew_port_rules.db")
+    cursor = conn.cursor()
+
+    sql = "SELECT * FROM port_logs WHERE 1=1"
+    params = []
+
+    if query_text:
+        search_pattern = f"%{query_text.strip().upper()}%"
+        sql += """ AND (
+            UPPER(port_name) LIKE ? 
+            OR UPPER(country) LIKE ? 
+            OR UPPER(description) LIKE ? 
+            OR UPPER(agent_details) LIKE ? 
+            OR UPPER(required_docs) LIKE ?
+        )"""
+        params.extend([search_pattern] * 5)
+
+    if nationality and nationality != "Όλες":
+        sql += " AND (nationality = ? OR nationality = 'Όλες')"
+        params.append(nationality)
+
+    if role and role != "Όλοι":
+        sql += " AND (role = ? OR role = 'Όλοι')"
+        params.append(role)
+
+    sql += " ORDER BY id DESC"
+
+    cursor.execute(sql, params)
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
 
 
 # ---------------------------------------------------------
 # 2. HELPER FUNCTION ΓΙΑ ΕΜΦΑΝΙΣΗ ΚΑΡΤΕΛΩΝ (CARDS)
 # ---------------------------------------------------------
-def render_log_cards(df_to_show):
-    if df_to_show.empty:
+def render_log_cards(logs_list):
+    if not logs_list:
         st.info("Δεν υπάρχουν καταχωρημένες σημειώσεις για αυτή την κατηγορία.")
         return
 
-    for _, row in df_to_show.iterrows():
+    for log in logs_list:
+        (
+            log_id,
+            p_name,
+            country,
+            s_type,
+            nat,
+            role,
+            i_type,
+            severity,
+            desc,
+            req_docs,
+            agent,
+            c_email,
+            date_logged,
+        ) = log
+
         st.markdown("---")
-        severity = row.get("Severity", "Low")
         header_badge = (
             f"🔴 **[Σοβαρότητα: {severity}]**"
             if severity in ["High", "Critical"]
@@ -94,28 +185,26 @@ def render_log_cards(df_to_show):
         )
 
         st.markdown(
-            f"### {header_badge} - {row['Port']} ({row['Country']}) | Κατηγορία: {row['Issue_Type']}"
+            f"### {header_badge} - {p_name} ({country}) | Κατηγορία: {i_type}"
         )
         st.caption(
-            f"📅 Ημερομηνία: **{row['Date']}** | 👥 Αφορά: **{row['Nationality']}** ({row['Role']}) | 🚢 Τύπος: **{row.get('Signer_Type', 'Όλοι')}**"
+            f"📅 Ημερομηνία: **{date_logged}** | 👥 Αφορά: **{nat}** ({role}) | 🚢 Τύπος: **{s_type}**"
         )
 
-        st.markdown(f"**📝 Περιγραφή / Οδηγίες:**\n{row['Description']}")
+        st.markdown(f"**📝 Περιγραφή / Οδηγίες:**\n{desc}")
 
-        if pd.notna(row.get("Required_Docs")) and str(row["Required_Docs"]).strip():
+        if req_docs and req_docs.strip():
             st.markdown("##### 📋 Απαιτούμενα Έγγραφα / Checklist:")
-            docs_list = [d.strip() for d in str(row["Required_Docs"]).split(",") if d.strip()]
+            docs_list = [d.strip() for d in req_docs.split(",") if d.strip()]
             for doc in docs_list:
                 st.markdown(f"- 📄 {doc}")
 
-        if (pd.notna(row.get("Agent_Details")) and str(row["Agent_Details"]).strip()) or (
-            pd.notna(row.get("Contact_Email")) and str(row["Contact_Email"]).strip()
-        ):
+        if (agent and agent.strip()) or (c_email and c_email.strip()):
             st.markdown("##### 📞 Πράκτορας & Επικοινωνία:")
-            if pd.notna(row.get("Agent_Details")) and str(row["Agent_Details"]).strip():
-                st.write(f"**Σημειώσεις Πράκτορα:** {row['Agent_Details']}")
-            if pd.notna(row.get("Contact_Email")) and str(row["Contact_Email"]).strip():
-                st.write(f"**Email / Contact:** `{row['Contact_Email']}`")
+            if agent and agent.strip():
+                st.write(f"**Σημειώσεις Πράκτορα:** {agent}")
+            if c_email and c_email.strip():
+                st.write(f"**Email / Contact:** `{c_email}`")
 
 
 # ---------------------------------------------------------
@@ -129,7 +218,7 @@ def main():
     if not check_password():
         return
 
-    conn = st.connection("gsheets", type=GSheetsConnection)
+    init_db()
 
     with st.sidebar:
         st.write("👤 Συνδεδεμένος Χρήστης")
@@ -172,79 +261,63 @@ def main():
             )
 
         if st.button("Έλεγχος Ιστορικού"):
-            df = get_data_from_gsheets(conn)
+            if search_query:
+                logs = search_logs(search_query, search_nat, search_role)
 
-            if not df.empty and search_query:
-                query = search_query.strip().upper()
-                filtered_df = df[
-                    df["Port"].astype(str).str.contains(query, case=False, na=False)
-                    | df["Country"].astype(str).str.contains(query, case=False, na=False)
-                    | df["Description"].astype(str).str.contains(query, case=False, na=False)
-                    | df["Agent_Details"].astype(str).str.contains(query, case=False, na=False)
-                ]
-
-                if search_nat != "Όλες":
-                    filtered_df = filtered_df[
-                        (filtered_df["Nationality"] == search_nat)
-                        | (filtered_df["Nationality"] == "Όλες")
-                    ]
-
-                if search_role != "Όλοι":
-                    filtered_df = filtered_df[
-                        (filtered_df["Role"] == search_role)
-                        | (filtered_df["Role"] == "Όλοι")
-                    ]
-
-                if not filtered_df.empty:
+                if logs:
                     st.success(
-                        f"⚠️ Βρέθηκαν {len(filtered_df)} καταγεγραμμένες σημειώσεις για '{query}'."
+                        f"⚠️ Βρέθηκαν {len(logs)} καταγεγραμμένες σημειώσεις για '{search_query.upper()}'."
                     )
 
-                    # Υποκαρτέλες On-signers / Off-signers
                     sub_on, sub_off, sub_all = st.tabs(
-                        ["🟢 On-signers (Επιβίβαση)", "🔴 Off-signers (Αποβίβαση)", "📋 Όλα τα αποτελέσματα"]
+                        [
+                            "🟢 On-signers (Επιβίβαση)",
+                            "🔴 Off-signers (Αποβίβαση)",
+                            "📋 Όλα τα αποτελέσματα",
+                        ]
                     )
 
                     with sub_on:
-                        df_on = filtered_df[
-                            filtered_df["Signer_Type"].isin(["On-signer", "Και τα δύο", "Όλοι"])
+                        logs_on = [
+                            l for l in logs if l[3] in ["On-signer", "Και τα δύο"]
                         ]
-                        render_log_cards(df_on)
+                        render_log_cards(logs_on)
 
                     with sub_off:
-                        df_off = filtered_df[
-                            filtered_df["Signer_Type"].isin(["Off-signer", "Και τα δύο", "Όλοι"])
+                        logs_off = [
+                            l for l in logs if l[3] in ["Off-signer", "Και τα δύο"]
                         ]
-                        render_log_cards(df_off)
+                        render_log_cards(logs_off)
 
                     with sub_all:
-                        render_log_cards(filtered_df)
+                        render_log_cards(logs)
 
                 else:
-                    st.info("Δεν βρέθηκαν αποτελέσματα.")
+                    st.info("Δεν βρέθηκαν αποτελέσματα στη βάση.")
             else:
-                st.info("Παρακαλώ πληκτρολογήστε όνομα λιμανιού ή χώρας.")
+                st.info("Παρακαλώ πληκτρολογήστε όνομα λιμανιού, χώρας ή λέξη-κλειδί.")
 
     # -----------------------------------------------------
     # TAB 2: ΕΥΡΕΤΗΡΙΟ ΧΩΡΩΝ (COUNTRY DIRECTORY)
     # -----------------------------------------------------
     with tab2:
         st.subheader("🌍 Κατάλογος Χωρών & Συγκεντρωτικοί Κανόνες")
-        df = get_data_from_gsheets(conn)
+        all_logs = fetch_all_logs()
 
-        if not df.empty and "Country" in df.columns:
-            available_countries = sorted([c for c in df["Country"].dropna().unique() if str(c).strip() != ""])
+        if all_logs:
+            # Δημιουργία μοναδικής λίστας χωρών
+            countries = sorted(list(set([l[2] for l in all_logs if l[2]])))
 
-            if available_countries:
+            if countries:
                 selected_country = st.selectbox(
                     "📌 Επιλέξτε Χώρα για προβολή όλων των λιμανιών & κανόνων:",
-                    available_countries,
+                    countries,
                 )
 
                 if selected_country:
-                    country_df = df[df["Country"] == selected_country]
-                    
-                    ports_in_country = country_df["Port"].unique()
+                    country_logs = [l for l in all_logs if l[2] == selected_country]
+                    ports_in_country = sorted(list(set([l[1] for l in country_logs])))
+
                     st.markdown(
                         f"### 📍 Χώρα: **{selected_country}** ({len(ports_in_country)} Λιμάνια: {', '.join(ports_in_country)})"
                     )
@@ -258,19 +331,19 @@ def main():
                     )
 
                     with c_tab_on:
-                        df_c_on = country_df[
-                            country_df["Signer_Type"].isin(["On-signer", "Και τα δύο", "Όλοι"])
+                        c_logs_on = [
+                            l for l in country_logs if l[3] in ["On-signer", "Και τα δύο"]
                         ]
-                        render_log_cards(df_c_on)
+                        render_log_cards(c_logs_on)
 
                     with c_tab_off:
-                        df_c_off = country_df[
-                            country_df["Signer_Type"].isin(["Off-signer", "Και τα δύο", "Όλοι"])
+                        c_logs_off = [
+                            l for l in country_logs if l[3] in ["Off-signer", "Και τα δύο"]
                         ]
-                        render_log_cards(df_c_off)
+                        render_log_cards(c_logs_off)
 
                     with c_tab_all:
-                        render_log_cards(country_df)
+                        render_log_cards(country_logs)
 
             else:
                 st.info("Δεν έχουν καταχωρηθεί ακόμη χώρες στη βάση.")
@@ -314,8 +387,15 @@ def main():
                     ],
                 )
                 input_severity = st.selectbox(
-                    "Επίπεδο Σοβαρότητας*", ["Low", "Medium", "High", "Critical"]
+                    "Επίπεδο Σοβαρότητας*",
+                    [
+                        "Low (Απλή πληροφορία)",
+                        "Medium (Προσοχή)",
+                        "High (Μεγάλη δυσκολία)",
+                        "Critical (Απαγόρευση)",
+                    ],
                 )
+                severity_clean = input_severity.split()[0]
 
             st.markdown("---")
             input_desc = st.text_area("Περιγραφή Συμβάντος / Οδηγίες*")
@@ -335,21 +415,20 @@ def main():
             if submitted:
                 if input_port and input_country and input_desc and input_types:
                     types_str = ", ".join(input_types)
-                    add_log_to_gsheets(
-                        conn,
+                    add_log(
                         input_port,
                         input_country,
                         input_signer,
                         input_nat,
                         input_role,
                         types_str,
-                        input_severity,
+                        severity_clean,
                         input_desc,
                         input_docs,
                         input_agent,
                         input_email,
                     )
-                    st.success("Η εγγραφή αποθηκεύτηκε μόνιμα στο Google Sheet!")
+                    st.success("Η εγγραφή αποθηκεύτηκε επιτυχώς στη βάση!")
                 else:
                     st.error("Συμπληρώστε τα υποχρεωτικά πεδία (*).")
 
