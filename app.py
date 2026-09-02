@@ -87,11 +87,14 @@ def add_log(
     cursor = conn.cursor()
     today_str = datetime.now().strftime("%Y-%m-%d")
 
+    # Δημιουργία συνδυαστικού description για να μην 'χτυπάει' το NOT NULL constraint παλιών βάσεων
+    combined_desc = f"ON: {desc_on}\nOFF: {desc_off}".strip()
+
     cursor.execute(
         """
         INSERT INTO port_logs 
-        (port_name, country, nationality, role, issue_type, severity, desc_on, desc_off, required_docs, agent_details, contact_email, date_logged)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (port_name, country, nationality, role, issue_type, severity, description, desc_on, desc_off, required_docs, agent_details, contact_email, date_logged)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """,
         (
             port_name.strip().upper(),
@@ -100,6 +103,7 @@ def add_log(
             role,
             issue_type,
             severity,
+            combined_desc,
             desc_on,
             desc_off,
             required_docs,
@@ -128,11 +132,13 @@ def update_log(
 ):
     conn = sqlite3.connect("crew_port_rules.db")
     cursor = conn.cursor()
+    combined_desc = f"ON: {desc_on}\nOFF: {desc_off}".strip()
+
     cursor.execute(
         """
         UPDATE port_logs 
         SET port_name=?, country=?, nationality=?, role=?, issue_type=?, severity=?, 
-            desc_on=?, desc_off=?, required_docs=?, agent_details=?, contact_email=?
+            description=?, desc_on=?, desc_off=?, required_docs=?, agent_details=?, contact_email=?
         WHERE id=?
     """,
         (
@@ -142,6 +148,7 @@ def update_log(
             role,
             issue_type,
             severity,
+            combined_desc,
             desc_on,
             desc_off,
             required_docs,
@@ -323,7 +330,7 @@ def main():
     tab1, tab2, tab3, tab4 = st.tabs(
         [
             "🔍 Αναζήτηση & Alerts",
-            "🌍 Ευρετήριο Χωτών",
+            "🌍 Ευρετήριο Χωρών",
             "➕ Νέα Καταχώρηση",
             "✏️ Επεξεργασία & Διαγραφή",
         ]
