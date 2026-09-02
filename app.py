@@ -3,7 +3,7 @@ from datetime import datetime
 import streamlit as st
 
 # ---------------------------------------------------------
-# 0. ΑΣΦΑΛΕΙΑ & THEMING (CUSTOM CSS WITH FULL CONTRAST)
+# 0. ΑΣΦΑΛΕΙΑ & THEMING (CLEAN ENTERPRISE CSS)
 # ---------------------------------------------------------
 def apply_custom_theme():
     with st.sidebar:
@@ -14,123 +14,99 @@ def apply_custom_theme():
             index=0,
         )
 
-    # Καθορισμός χρωματικών παλετών
     if theme_choice == "Dark (Σκούρο)":
-        bg_color = "#121214"
-        card_bg = "#1E1E24"
-        text_color = "#E4E6EB"
-        label_color = "#FFFFFF"
-        border_color = "#3A3A4C"
+        bg_color = "#0F172A"
+        card_bg = "#1E293B"
+        card_border = "#334155"
+        text_color = "#F8FAFC"
+        sub_text = "#94A3B8"
         accent_color = "#3B82F6"
-        input_bg = "#22222A"
-        input_text = "#FFFFFF"
-        placeholder_color = "#9CA3AF"
+        input_bg = "#1E293B"
+        input_text = "#F8FAFC"
         header_color = "#60A5FA"
-        tab_unselected = "#9CA3AF"
     elif theme_choice == "Light (Φωτεινό)":
         bg_color = "#F8FAFC"
         card_bg = "#FFFFFF"
-        text_color = "#1E293B"
-        label_color = "#0F172A"
-        border_color = "#CBD5E1"
+        card_border = "#E2E8F0"
+        text_color = "#0F172A"
+        sub_text = "#64748B"
         accent_color = "#2563EB"
         input_bg = "#FFFFFF"
         input_text = "#0F172A"
-        placeholder_color = "#64748B"
         header_color = "#1D4ED8"
-        tab_unselected = "#64748B"
     else:  # Pink Theme
-        bg_color = "#FFF0F5"
+        bg_color = "#FFF5F7"
         card_bg = "#FFFFFF"
-        text_color = "#4A1525"
-        label_color = "#831843"
-        border_color = "#FBCFE8"
+        card_border = "#FCE7F3"
+        text_color = "#831843"
+        sub_text = "#9D4C6C"
         accent_color = "#DB2777"
         input_bg = "#FFFFFF"
         input_text = "#831843"
-        placeholder_color = "#9D4C6C"
         header_color = "#BE185D"
-        tab_unselected = "#9D4C6C"
 
-    # Inject Targeted CSS για 100% Ευανάγνωστα Στοιχεία
     css = f"""
     <style>
-        /* General App */
+        /* Base Styling */
         .stApp {{
             background-color: {bg_color} !important;
             color: {text_color} !important;
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
         }}
         
-        /* Headers & Titles */
         h1, h2, h3 {{
             color: {header_color} !important;
             font-weight: 700 !important;
-        }}
-        
-        /* Labels πάνω από τα Input fields & Selectboxes */
-        label, div[data-testid="stMarkdownContainer"] p {{
-            color: {label_color} !important;
-            font-weight: 600 !important;
-        }}
-        
-        /* Input Fields & Textareas */
-        .stTextInput input, .stTextArea textarea {{
-            background-color: {input_bg} !important;
-            color: {input_text} !important;
-            border-radius: 8px !important;
-            border: 1.5px solid {border_color} !important;
-        }}
-        
-        /* Placeholders inside inputs */
-        ::placeholder {{
-            color: {placeholder_color} !important;
-            opacity: 0.8 !important;
+            letter-spacing: -0.02em;
         }}
 
-        /* Selectboxes & Multiselects */
-        div[data-baseweb="select"] > div {{
+        /* Clean Card Layout */
+        .custom-card {{
+            background-color: {card_bg} !important;
+            border: 1px solid {card_border} !important;
+            border-radius: 12px !important;
+            padding: 20px !important;
+            margin-bottom: 20px !important;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03) !important;
+        }}
+
+        /* Badges Styling */
+        .badge {{
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            margin-right: 6px;
+        }}
+        .badge-low {{ background-color: #DBEAFE; color: #1E40AF; }}
+        .badge-medium {{ background-color: #FEF3C7; color: #92400E; }}
+        .badge-high {{ background-color: #FEE2E2; color: #991B1B; }}
+        .badge-cat {{ background-color: #E0E7FF; color: #3730A3; }}
+
+        /* Input Controls */
+        label, div[data-testid="stMarkdownContainer"] p {{
+            color: {text_color} !important;
+            font-weight: 500 !important;
+        }}
+        
+        .stTextInput input, .stTextArea textarea, div[data-baseweb="select"] > div {{
             background-color: {input_bg} !important;
             color: {input_text} !important;
             border-radius: 8px !important;
-            border: 1.5px solid {border_color} !important;
+            border: 1px solid {card_border} !important;
         }}
-        div[data-baseweb="select"] span {{
-            color: {input_text} !important;
-        }}
-        
-        /* Buttons */
-        .stButton>button {{
-            background-color: {accent_color} !important;
-            color: #FFFFFF !important;
-            border-radius: 8px !important;
-            border: none !important;
-            font-weight: 600 !important;
-            padding: 0.5rem 1.2rem !important;
-            box-shadow: 0px 3px 8px rgba(0, 0, 0, 0.12) !important;
-        }}
-        .stButton>button:hover {{
-            opacity: 0.9 !important;
-            transform: translateY(-1px);
-        }}
-        
-        /* Tabs Fix - Για να διαβάζονται και τα ανενεργά Tabs */
+
+        /* Tab Buttons */
         button[data-baseweb="tab"] p {{
-            color: {tab_unselected} !important;
             font-weight: 600 !important;
-            font-size: 1rem !important;
+            font-size: 0.95rem !important;
         }}
         button[aria-selected="true"] p {{
             color: {accent_color} !important;
-            font-weight: 700 !important;
         }}
         button[aria-selected="true"] {{
-            border-bottom: 3px solid {accent_color} !important;
-        }}
-        
-        /* Info & Warning Boxes */
-        .stAlert {{
-            border-radius: 10px !important;
+            border-bottom: 2.5px solid {accent_color} !important;
         }}
     </style>
     """
@@ -161,7 +137,7 @@ def check_password():
 
 
 # ---------------------------------------------------------
-# 1. ΒΑΣΗ ΔΕΔΟΜΕΝΩΝ (SQLite Setup & Schema Updates)
+# 1. ΒΑΣΗ ΔΕΔΟΜΕΝΩΝ (SQLite Setup)
 # ---------------------------------------------------------
 def init_db():
     conn = sqlite3.connect("crew_port_rules.db")
@@ -372,12 +348,9 @@ def search_logs(query_text, nationality=None, role=None):
 
 
 # ---------------------------------------------------------
-# 2. HELPER FUNCTION ΓΙΑ ΕΜΦΑΝΙΣΗ ΚΑΡΤΕΛΩΝ (CARDS)
+# 2. MODERN CARD RENDERER (CLEAN DASHBOARD STYLE)
 # ---------------------------------------------------------
 def render_log_cards(logs_list, filter_type="ALL"):
-    """
-    filter_type: 'ALL', 'ON', 'OFF'
-    """
     filtered = []
     for log in logs_list:
         desc_on = log[9] if log[9] else ""
@@ -417,59 +390,69 @@ def render_log_cards(logs_list, filter_type="ALL"):
         c_email = log[15] if log[15] else ""
         date_logged = log[16] if log[16] else ""
 
-        st.markdown("---")
-        header_badge = (
-            f"🔴 **[Σοβαρότητα: {severity}]**"
-            if severity in ["High", "Critical"]
-            else f"🟡 **[Σοβαρότητα: {severity}]**"
-            if severity == "Medium"
-            else f"🔵 **[Σοβαρότητα: {severity}]**"
-        )
+        # Determination of Severity Badge Class
+        sev_class = "badge-low"
+        if severity in ["High", "Critical"]:
+            sev_class = "badge-high"
+        elif severity == "Medium":
+            sev_class = "badge-medium"
 
+        # Clean Container Block
         st.markdown(
-            f"### #{log_id} | {header_badge} - {p_name} ({country}) | Κατηγορία: {i_type}"
-        )
-        st.caption(
-            f"📅 Ημερομηνία: **{date_logged}** | 👥 Αφορά: **{nat}** ({role})"
+            f"""
+            <div class="custom-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(150, 150, 150, 0.2); padding-bottom: 10px; margin-bottom: 12px;">
+                    <div>
+                        <span style="font-size: 1.25rem; font-weight: 700;">📍 {p_name} <span style="font-size: 0.95rem; opacity: 0.7;">({country})</span></span>
+                        <span style="font-size: 0.8rem; opacity: 0.5; margin-left: 10px;">ID #{log_id}</span>
+                    </div>
+                    <div>
+                        <span class="badge {sev_class}">{severity} Severity</span>
+                        <span class="badge badge-cat">{i_type}</span>
+                    </div>
+                </div>
+                <div style="font-size: 0.85rem; opacity: 0.75; margin-bottom: 12px;">
+                    📅 <b>{date_logged}</b> | 👥 Αφορά: <b>{nat}</b> ({role})
+                </div>
+            """,
+            unsafe_allow_html=True,
         )
 
-        # Εμφάνιση Οδηγιών & Εγγράφων On-signer
+        # On-Signers Content
         if filter_type in ["ALL", "ON"]:
             if (desc_on and desc_on.strip()) or (docs_on and docs_on.strip()):
-                st.markdown("🟢 **ON-SIGNERS (Επιβίβαση):**")
+                st.markdown("🟢 **ON-SIGNERS (Επιβίβαση)**")
                 if desc_on and desc_on.strip():
-                    st.info(f"**Οδηγίες:**\n{desc_on}")
+                    st.info(desc_on)
                 if docs_on and docs_on.strip():
-                    st.markdown("**📋 Απαιτούμενα Έγγραφα (On):**")
-                    for doc in [d.strip() for d in docs_on.split(",") if d.strip()]:
-                        st.markdown(f"- 📄 {doc}")
+                    st.caption("📋 **Έγγραφα:** " + docs_on)
 
-        # Εμφάνιση Οδηγιών & Εγγράφων Off-signer
+        # Off-Signers Content
         if filter_type in ["ALL", "OFF"]:
             if (desc_off and desc_off.strip()) or (docs_off and docs_off.strip()):
-                st.markdown("🔴 **OFF-SIGNERS (Αποβίβαση):**")
+                st.markdown("🔴 **OFF-SIGNERS (Αποβίβαση)**")
                 if desc_off and desc_off.strip():
-                    st.warning(f"**Οδηγίες:**\n{desc_off}")
+                    st.warning(desc_off)
                 if docs_off and docs_off.strip():
-                    st.markdown("**📋 Απαιτούμενα Έγγραφα (Off):**")
-                    for doc in [d.strip() for d in docs_off.split(",") if d.strip()]:
-                        st.markdown(f"- 📄 {doc}")
+                    st.caption("📋 **Έγγραφα:** " + docs_off)
 
-        # Παλαιότερες σημειώσεις (για συμβατότητα)
+        # Legacy Compatibility
         if old_desc and old_desc.strip() and not (desc_on or desc_off):
-            st.markdown("📝 **Γενική Περιγραφή / Οδηγίες:**")
+            st.markdown("📝 **Γενικές Οδηγίες:**")
             st.write(old_desc)
-        if old_docs and old_docs.strip() and not (docs_on or docs_off):
-            st.markdown("📋 **Γενικά Απαιτούμενα Έγγραφα:**")
-            for doc in [d.strip() for d in old_docs.split(",") if d.strip()]:
-                st.markdown(f"- 📄 {doc}")
 
+        # Agent & Contact Info
         if (agent and agent.strip()) or (c_email and c_email.strip()):
-            st.markdown("##### 📞 Πράκτορας & Επικοινωνία:")
-            if agent and agent.strip():
-                st.write(f"**Σημειώσεις Πράκτορα:** {agent}")
-            if c_email and c_email.strip():
-                st.write(f"**Email / Contact:** `{c_email}`")
+            st.markdown("<hr style='margin: 10px 0; opacity: 0.1;'>", unsafe_allow_html=True)
+            cols = st.columns([2, 1])
+            with cols[0]:
+                if agent and agent.strip():
+                    st.markdown(f"📞 **Πράκτορας:** {agent}")
+            with cols[1]:
+                if c_email and c_email.strip():
+                    st.markdown(f"✉️ **Email:** `{c_email}`")
+
+        st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------
@@ -494,10 +477,11 @@ def main():
             st.session_state["authenticated"] = False
             st.rerun()
 
-    st.title("⚓ Crew Operations & Port Intelligence System")
-    st.write(
+    st.title("⚓ Crew Operations & Port Intelligence")
+    st.caption(
         "Σύστημα παρακολούθησης κανόνων λιμανιών, ταξιδιωτικών απαιτήσεων & ιστορικού συμβάντων."
     )
+    st.markdown("---")
 
     tab1, tab2, tab3, tab4 = st.tabs(
         [
@@ -514,7 +498,7 @@ def main():
     with tab1:
         st.subheader("Εσωτερικός Έλεγχος & Ιστορικό Εταιρείας")
 
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3 = st.columns([2, 1, 1])
         with col1:
             search_query = st.text_input(
                 "🔍 Λιμάνι, Χώρα ή Λέξη-Κλειδί:",
@@ -529,7 +513,7 @@ def main():
                 "Ιδιότητα:", ["Όλοι", "Πλήρωμα", "Superintendent", "Τεχνικός"]
             )
 
-        if st.button("Έλεγχος Ιστορικού"):
+        if st.button("Έλεγχος Ιστορικού", use_container_width=True):
             if search_query:
                 logs = search_logs(search_query, search_nat, search_role)
 
@@ -581,7 +565,7 @@ def main():
                     ports_in_country = sorted(list(set([l[1] for l in country_logs])))
 
                     st.markdown(
-                        f"### 📍 Χώρα: **{selected_country}** ({len(ports_in_country)} Λιμάνια: `{', '.join(ports_in_country)}`)"
+                        f"#### 📍 Χώρα: **{selected_country}** ({len(ports_in_country)} Λιμάνια: `{', '.join(ports_in_country)}`)"
                     )
 
                     c_tab_on, c_tab_off, c_tab_all = st.tabs(
@@ -650,39 +634,39 @@ def main():
                 severity_clean = input_severity.split()[0]
 
             st.markdown("---")
-            st.markdown("#### 📝 Οδηγίες & Απαιτούμενα Έγγραφα (Συμπληρώστε όποιο ισχύει)")
+            st.markdown("#### 📝 Οδηγίες & Απαιτούμενα Έγγραφα")
 
             col_on, col_off = st.columns(2)
             with col_on:
                 input_desc_on = st.text_area(
                     "🟢 Οδηγίες για ON-SIGNERS (Επιβίβαση)",
-                    placeholder="Π.χ. Απαιτείται OK to Board 48h πριν, ESTA, Guarantee Letter...",
-                    height=120,
+                    placeholder="Π.χ. Απαιτείται OK to Board 48h πριν...",
+                    height=100,
                 )
                 input_docs_on = st.text_input(
                     "📋 Απαιτούμενα Έγγραφα (ON-SIGNERS)",
-                    placeholder="π.χ. US C1/D Visa, Flight Ticket, Guarantee Letter",
+                    placeholder="π.χ. US C1/D Visa, Flight Ticket",
                 )
 
             with col_off:
                 input_desc_off = st.text_area(
                     "🔴 Οδηγίες για OFF-SIGNERS (Αποβίβαση)",
-                    placeholder="Π.χ. Δεν επιτρέπεται shore leave, απαιτείται συνοδεία πράκτορα στο αεροδρόμιο...",
-                    height=120,
+                    placeholder="Π.χ. Δεν επιτρέπεται shore leave...",
+                    height=100,
                 )
                 input_docs_off = st.text_input(
                     "📋 Απαιτούμενα Έγγραφα (OFF-SIGNERS)",
-                    placeholder="π.χ. Transit Visa, Exit Stamp, SIRB",
+                    placeholder="π.χ. Transit Visa, Exit Stamp",
                 )
 
             st.markdown("---")
             col_agent1, col_agent2 = st.columns(2)
             with col_agent1:
-                input_agent = st.text_area("Στοιχεία Πράκτορα / Σημειώσεις")
+                input_agent = st.text_area("Στοιχεία Πράκτορα / Σημειώσεις", height=80)
             with col_agent2:
                 input_email = st.text_input("📧 Contact Email")
 
-            submitted = st.form_submit_button("💾 Αποθήκευση στη Βάση")
+            submitted = st.form_submit_button("💾 Αποθήκευση στη Βάση", use_container_width=True)
 
             if submitted:
                 if input_port and input_country and input_types and (input_desc_on or input_desc_off or input_docs_on or input_docs_off):
@@ -701,10 +685,10 @@ def main():
                         input_agent,
                         input_email,
                     )
-                    st.success("✅ Η εγγραφή αποθηκεύτηκε επιτυχώς στη βάση!")
+                    st.success("✅ Η εγγραφή αποθηκεύτηκε επιτυχώς!")
                     st.rerun()
                 else:
-                    st.error("❌ Παρακαλώ συμπληρώστε τα υποχρεωτικά πεδία (*) και τουλάχιστον μία οδηγία ή έγγραφο (On-signer ή Off-signer).")
+                    st.error("❌ Παρακαλώ συμπληρώστε τα υποχρεωτικά πεδία (*).")
 
     # -----------------------------------------------------
     # TAB 4: ΕΠΕΞΕΡΓΑΣΙΑ & ΔΙΑΓΡΑΦΗ
@@ -812,7 +796,7 @@ def main():
                     edit_desc_on = st.text_area(
                         "🟢 Οδηγίες για ON-SIGNERS (Επιβίβαση)",
                         value=e_desc_on,
-                        height=120,
+                        height=100,
                     )
                     edit_docs_on = st.text_input(
                         "📋 Απαιτούμενα Έγγραφα (ON-SIGNERS)",
@@ -823,7 +807,7 @@ def main():
                     edit_desc_off = st.text_area(
                         "🔴 Οδηγίες για OFF-SIGNERS (Αποβίβαση)",
                         value=e_desc_off,
-                        height=120,
+                        height=100,
                     )
                     edit_docs_off = st.text_input(
                         "📋 Απαιτούμενα Έγγραφα (OFF-SIGNERS)",
@@ -836,6 +820,7 @@ def main():
                     edit_agent = st.text_area(
                         "Στοιχεία Πράκτορα / Σημειώσεις",
                         value=e_agent,
+                        height=80,
                     )
                 with ec_a2:
                     edit_email = st.text_input(
@@ -845,9 +830,9 @@ def main():
 
                 col_btn1, col_btn2 = st.columns([1, 1])
                 with col_btn1:
-                    update_submitted = st.form_submit_button("💾 Ενημέρωση Εγγραφής")
+                    update_submitted = st.form_submit_button("💾 Ενημέρωση Εγγραφής", use_container_width=True)
                 with col_btn2:
-                    delete_submitted = st.form_submit_button("🗑️ Διαγραφή Εγγραφής")
+                    delete_submitted = st.form_submit_button("🗑️ Διαγραφή Εγγραφής", use_container_width=True)
 
                 if update_submitted:
                     types_str = ", ".join(edit_types)
@@ -877,3 +862,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
