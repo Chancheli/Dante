@@ -87,7 +87,6 @@ def add_log(
     cursor = conn.cursor()
     today_str = datetime.now().strftime("%Y-%m-%d")
 
-    # Δημιουργία συνδυαστικού description για να μην 'χτυπάει' το NOT NULL constraint παλιών βάσεων
     combined_desc = f"ON: {desc_on}\nOFF: {desc_off}".strip()
 
     cursor.execute(
@@ -172,7 +171,15 @@ def delete_log(log_id):
 def fetch_all_logs():
     conn = sqlite3.connect("crew_port_rules.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM port_logs ORDER BY id DESC")
+    # Αυστηρός καθορισμός σειράς στηλών
+    cursor.execute(
+        """
+        SELECT id, port_name, country, signer_type, nationality, role, issue_type, severity, 
+               description, desc_on, desc_off, required_docs, agent_details, contact_email, date_logged 
+        FROM port_logs 
+        ORDER BY id DESC
+    """
+    )
     rows = cursor.fetchall()
     conn.close()
     return rows
@@ -182,7 +189,11 @@ def search_logs(query_text, nationality=None, role=None):
     conn = sqlite3.connect("crew_port_rules.db")
     cursor = conn.cursor()
 
-    sql = "SELECT * FROM port_logs WHERE 1=1"
+    sql = """
+        SELECT id, port_name, country, signer_type, nationality, role, issue_type, severity, 
+               description, desc_on, desc_off, required_docs, agent_details, contact_email, date_logged 
+        FROM port_logs WHERE 1=1
+    """
     params = []
 
     if query_text:
@@ -223,9 +234,9 @@ def render_log_cards(logs_list, filter_type="ALL"):
     """
     filtered = []
     for log in logs_list:
-        desc_on = log[9] if len(log) > 9 else ""
-        desc_off = log[10] if len(log) > 10 else ""
-        old_desc = log[8] if len(log) > 8 else ""
+        desc_on = log[9] if log[9] else ""
+        desc_off = log[10] if log[10] else ""
+        old_desc = log[8] if log[8] else ""
 
         if filter_type == "ON":
             if (desc_on and desc_on.strip()) or (old_desc and old_desc.strip()):
@@ -248,13 +259,13 @@ def render_log_cards(logs_list, filter_type="ALL"):
         role = log[5]
         i_type = log[6]
         severity = log[7]
-        old_desc = log[8]
-        desc_on = log[9] if len(log) > 9 else ""
-        desc_off = log[10] if len(log) > 10 else ""
-        req_docs = log[11] if len(log) > 11 else ""
-        agent = log[12] if len(log) > 12 else ""
-        c_email = log[13] if len(log) > 13 else ""
-        date_logged = log[14] if len(log) > 14 else ""
+        old_desc = log[8] if log[8] else ""
+        desc_on = log[9] if log[9] else ""
+        desc_off = log[10] if log[10] else ""
+        req_docs = log[11] if log[11] else ""
+        agent = log[12] if log[12] else ""
+        c_email = log[13] if log[13] else ""
+        date_logged = log[14] if log[14] else ""
 
         st.markdown("---")
         header_badge = (
@@ -396,7 +407,6 @@ def main():
         all_logs = fetch_all_logs()
 
         if all_logs:
-            # Δημιουργία μοναδικής λίστας χωρών
             countries = sorted(list(set([l[2] for l in all_logs if l[2]])))
 
             if countries:
@@ -547,25 +557,23 @@ def main():
             )
 
             selected_log = log_options[selected_option]
-            (
-                e_id,
-                e_port,
-                e_country,
-                _,
-                e_nat,
-                e_role,
-                e_type,
-                e_severity,
-                e_old_desc,
-                e_desc_on,
-                e_desc_off,
-                e_docs,
-                e_agent,
-                e_email,
-                _,
-            ) = selected_log
 
-            # Αν είναι παλιά εγγραφή χωρίς desc_on/off, βάζουμε το old_desc στο desc_on
+            # Σωστή αντιστοίχιση μεταβλητών βάσει του SELECT query
+            e_id = selected_log[0]
+            e_port = selected_log[1]
+            e_country = selected_log[2]
+            e_signer_type = selected_log[3]
+            e_nat = selected_log[4]
+            e_role = selected_log[5]
+            e_type = selected_log[6]
+            e_severity = selected_log[7]
+            e_old_desc = selected_log[8] if selected_log[8] else ""
+            e_desc_on = selected_log[9] if selected_log[9] else ""
+            e_desc_off = selected_log[10] if selected_log[10] else ""
+            e_docs = selected_log[11] if selected_log[11] else ""
+            e_agent = selected_log[12] if selected_log[12] else ""
+            e_email = selected_log[13] if selected_log[13] else ""
+
             if not e_desc_on and not e_desc_off and e_old_desc:
                 e_desc_on = e_old_desc
 
@@ -633,31 +641,31 @@ def main():
                 with col_e_on:
                     edit_desc_on = st.text_area(
                         "🟢 Οδηγίες για ON-SIGNERS (Επιβίβαση)",
-                        value=e_desc_on if e_desc_on else "",
+                        value=e_desc_on,
                         height=130,
                     )
                 with col_e_off:
                     edit_desc_off = st.text_area(
                         "🔴 Οδηγίες για OFF-SIGNERS (Αποβίβαση)",
-                        value=e_desc_off if e_desc_off else "",
+                        value=e_desc_off,
                         height=130,
                     )
 
                 edit_docs = st.text_input(
                     "📋 Απαιτούμενα Έγγραφα (διαχωρίστε με κόμμα)",
-                    value=e_docs if e_docs else "",
+                    value=e_docs,
                 )
 
                 ec_a1, ec_a2 = st.columns(2)
                 with ec_a1:
                     edit_agent = st.text_area(
                         "Στοιχεία Πράκτορα / Σημειώσεις",
-                        value=e_agent if e_agent else "",
+                        value=e_agent,
                     )
                 with ec_a2:
                     edit_email = st.text_input(
                         "📧 Contact Email",
-                        value=e_email if e_email else "",
+                        value=e_email,
                     )
 
                 col_btn1, col_btn2 = st.columns([1, 1])
