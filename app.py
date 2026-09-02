@@ -16,7 +16,6 @@ def check_password():
     st.write("Παρακαλώ εισάγετε τον κωδικό πρόσβασης για να συνεχίσετε.")
 
     CORRECT_PASSWORD = "crew2026"
-
     user_password = st.text_input("Κωδικός Πρόσβασης:", type="password")
 
     if st.button("Είσοδος"):
@@ -30,7 +29,7 @@ def check_password():
 
 
 # ---------------------------------------------------------
-# 1. ΒΑΣΗ ΔΕΔΟΜΕΝΩΝ (SQLite Setup)
+# 1. ΒΑΣΗ ΔΕΔΟΜΕΝΩΝ (SQLite Setup & Schema Updates)
 # ---------------------------------------------------------
 def init_db():
     conn = sqlite3.connect("crew_port_rules.db")
@@ -42,12 +41,14 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             port_name TEXT NOT NULL,
             country TEXT NOT NULL,
-            signer_type TEXT NOT NULL,
+            signer_type TEXT,
             nationality TEXT NOT NULL,
             role TEXT NOT NULL,
             issue_type TEXT NOT NULL,
             severity TEXT NOT NULL,
-            description TEXT NOT NULL,
+            description TEXT,
+            desc_on TEXT,
+            desc_off TEXT,
             required_docs TEXT,
             agent_details TEXT,
             contact_email TEXT,
@@ -56,11 +57,14 @@ def init_db():
     """
     )
 
-    # Έλεγχος & Αυτόματη Αναβάθμιση Πεδίων
+    # Έλεγχος & Αυτόματη Αναβάθμιση Πεδίων στη Βάση
     cursor.execute("PRAGMA table_info(port_logs)")
     columns = [col[1] for col in cursor.fetchall()]
-    if "signer_type" not in columns:
-        cursor.execute("ALTER TABLE port_logs ADD COLUMN signer_type TEXT DEFAULT 'Και τα δύο'")
+
+    if "desc_on" not in columns:
+        cursor.execute("ALTER TABLE port_logs ADD COLUMN desc_on TEXT")
+    if "desc_off" not in columns:
+        cursor.execute("ALTER TABLE port_logs ADD COLUMN desc_off TEXT")
 
     conn.commit()
     conn.close()
@@ -69,12 +73,12 @@ def init_db():
 def add_log(
     port_name,
     country,
-    signer_type,
     nationality,
     role,
     issue_type,
     severity,
-    description,
+    desc_on,
+    desc_off,
     required_docs,
     agent_details,
     contact_email,
@@ -82,27 +86,78 @@ def add_log(
     conn = sqlite3.connect("crew_port_rules.db")
     cursor = conn.cursor()
     today_str = datetime.now().strftime("%Y-%m-%d")
+
     cursor.execute(
         """
         INSERT INTO port_logs 
-        (port_name, country, signer_type, nationality, role, issue_type, severity, description, required_docs, agent_details, contact_email, date_logged)
+        (port_name, country, nationality, role, issue_type, severity, desc_on, desc_off, required_docs, agent_details, contact_email, date_logged)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """,
         (
             port_name.strip().upper(),
             country.strip().upper(),
-            signer_type,
             nationality,
             role,
             issue_type,
             severity,
-            description,
+            desc_on,
+            desc_off,
             required_docs,
             agent_details,
             contact_email,
             today_str,
         ),
     )
+    conn.commit()
+    conn.close()
+
+
+def update_log(
+    log_id,
+    port_name,
+    country,
+    nationality,
+    role,
+    issue_type,
+    severity,
+    desc_on,
+    desc_off,
+    required_docs,
+    agent_details,
+    contact_email,
+):
+    conn = sqlite3.connect("crew_port_rules.db")
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        UPDATE port_logs 
+        SET port_name=?, country=?, nationality=?, role=?, issue_type=?, severity=?, 
+            desc_on=?, desc_off=?, required_docs=?, agent_details=?, contact_email=?
+        WHERE id=?
+    """,
+        (
+            port_name.strip().upper(),
+            country.strip().upper(),
+            nationality,
+            role,
+            issue_type,
+            severity,
+            desc_on,
+            desc_off,
+            required_docs,
+            agent_details,
+            contact_email,
+            log_id,
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
+def delete_log(log_id):
+    conn = sqlite3.connect("crew_port_rules.db")
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM port_logs WHERE id=?", (log_id,))
     conn.commit()
     conn.close()
 
@@ -128,11 +183,13 @@ def search_logs(query_text, nationality=None, role=None):
         sql += """ AND (
             UPPER(port_name) LIKE ? 
             OR UPPER(country) LIKE ? 
-            OR UPPER(description) LIKE ? 
-            OR UPPER(agent_details) LIKE ? 
-            OR UPPER(required_docs) LIKE ?
+            OR UPPER(COALESCE(description,'')) LIKE ?
+            OR UPPER(COALESCE(desc_on,'')) LIKE ?
+            OR UPPER(COALESCE(desc_off,'')) LIKE ?
+            OR UPPER(COALESCE(agent_details,'')) LIKE ? 
+            OR UPPER(COALESCE(required_docs,'')) LIKE ?
         )"""
-        params.extend([search_pattern] * 5)
+        params.extend([search_pattern] * 7)
 
     if nationality and nationality != "Όλες":
         sql += " AND (nationality = ? OR nationality = 'Όλες')"
@@ -153,27 +210,44 @@ def search_logs(query_text, nationality=None, role=None):
 # ---------------------------------------------------------
 # 2. HELPER FUNCTION ΓΙΑ ΕΜΦΑΝΙΣΗ ΚΑΡΤΕΛΩΝ (CARDS)
 # ---------------------------------------------------------
-def render_log_cards(logs_list):
-    if not logs_list:
+def render_log_cards(logs_list, filter_type="ALL"):
+    """
+    filter_type: 'ALL', 'ON', 'OFF'
+    """
+    filtered = []
+    for log in logs_list:
+        desc_on = log[9] if len(log) > 9 else ""
+        desc_off = log[10] if len(log) > 10 else ""
+        old_desc = log[8] if len(log) > 8 else ""
+
+        if filter_type == "ON":
+            if (desc_on and desc_on.strip()) or (old_desc and old_desc.strip()):
+                filtered.append(log)
+        elif filter_type == "OFF":
+            if (desc_off and desc_off.strip()) or (old_desc and old_desc.strip()):
+                filtered.append(log)
+        else:
+            filtered.append(log)
+
+    if not filtered:
         st.info("Δεν υπάρχουν καταχωρημένες σημειώσεις για αυτή την κατηγορία.")
         return
 
-    for log in logs_list:
-        (
-            log_id,
-            p_name,
-            country,
-            s_type,
-            nat,
-            role,
-            i_type,
-            severity,
-            desc,
-            req_docs,
-            agent,
-            c_email,
-            date_logged,
-        ) = log
+    for log in filtered:
+        log_id = log[0]
+        p_name = log[1]
+        country = log[2]
+        nat = log[4]
+        role = log[5]
+        i_type = log[6]
+        severity = log[7]
+        old_desc = log[8]
+        desc_on = log[9] if len(log) > 9 else ""
+        desc_off = log[10] if len(log) > 10 else ""
+        req_docs = log[11] if len(log) > 11 else ""
+        agent = log[12] if len(log) > 12 else ""
+        c_email = log[13] if len(log) > 13 else ""
+        date_logged = log[14] if len(log) > 14 else ""
 
         st.markdown("---")
         header_badge = (
@@ -185,13 +259,28 @@ def render_log_cards(logs_list):
         )
 
         st.markdown(
-            f"### {header_badge} - {p_name} ({country}) | Κατηγορία: {i_type}"
+            f"### #{log_id} | {header_badge} - {p_name} ({country}) | Κατηγορία: {i_type}"
         )
         st.caption(
-            f"📅 Ημερομηνία: **{date_logged}** | 👥 Αφορά: **{nat}** ({role}) | 🚢 Τύπος: **{s_type}**"
+            f"📅 Ημερομηνία: **{date_logged}** | 👥 Αφορά: **{nat}** ({role})"
         )
 
-        st.markdown(f"**📝 Περιγραφή / Οδηγίες:**\n{desc}")
+        # Εμφάνιση Οδηγιών On-signer
+        if filter_type in ["ALL", "ON"]:
+            if desc_on and desc_on.strip():
+                st.markdown("🟢 **Οδηγίες για On-signers (Επιβίβαση):**")
+                st.info(desc_on)
+
+        # Εμφάνιση Οδηγιών Off-signer
+        if filter_type in ["ALL", "OFF"]:
+            if desc_off and desc_off.strip():
+                st.markdown("🔴 **Οδηγίες για Off-signers (Αποβίβαση):**")
+                st.warning(desc_off)
+
+        # Παλαιότερες σημειώσεις (αν υπάρχουν)
+        if old_desc and old_desc.strip() and not (desc_on or desc_off):
+            st.markdown("📝 **Γενική Περιγραφή / Οδηγίες:**")
+            st.write(old_desc)
 
         if req_docs and req_docs.strip():
             st.markdown("##### 📋 Απαιτούμενα Έγγραφα / Checklist:")
@@ -231,16 +320,17 @@ def main():
         "Σύστημα παρακολούθησης κανόνων λιμανιών, ταξιδιωτικών απαιτήσεων & ιστορικού συμβάντων."
     )
 
-    tab1, tab2, tab3 = st.tabs(
+    tab1, tab2, tab3, tab4 = st.tabs(
         [
-            "🔍 Αναζήτηση & Alerts (Internal)",
-            "🌍 Ευρετήριο Χωρών (Country Directory)",
-            "➕ Καταχώρηση Νέας Εμπειρίας / Δυσκολίας",
+            "🔍 Αναζήτηση & Alerts",
+            "🌍 Ευρετήριο Χωτών",
+            "➕ Νέα Καταχώρηση",
+            "✏️ Επεξεργασία & Διαγραφή",
         ]
     )
 
     # -----------------------------------------------------
-    # TAB 1: ΑΝΑΖΗΤΗΣΗ & ON/OFF SIGNERS SUBTABS
+    # TAB 1: ΑΝΑΖΗΤΗΣΗ & ALERTS
     # -----------------------------------------------------
     with tab1:
         st.subheader("Εσωτερικός Έλεγχος & Ιστορικό Εταιρείας")
@@ -249,7 +339,7 @@ def main():
         with col1:
             search_query = st.text_input(
                 "🔍 Λιμάνι, Χώρα ή Λέξη-Κλειδί:",
-                placeholder="e.g. USA, Garyville, Ploutos",
+                placeholder="e.g. USA, Singapore, Garyville",
             )
         with col2:
             search_nat = st.selectbox(
@@ -278,19 +368,13 @@ def main():
                     )
 
                     with sub_on:
-                        logs_on = [
-                            l for l in logs if l[3] in ["On-signer", "Και τα δύο"]
-                        ]
-                        render_log_cards(logs_on)
+                        render_log_cards(logs, filter_type="ON")
 
                     with sub_off:
-                        logs_off = [
-                            l for l in logs if l[3] in ["Off-signer", "Και τα δύο"]
-                        ]
-                        render_log_cards(logs_off)
+                        render_log_cards(logs, filter_type="OFF")
 
                     with sub_all:
-                        render_log_cards(logs)
+                        render_log_cards(logs, filter_type="ALL")
 
                 else:
                     st.info("Δεν βρέθηκαν αποτελέσματα στη βάση.")
@@ -298,7 +382,7 @@ def main():
                 st.info("Παρακαλώ πληκτρολογήστε όνομα λιμανιού, χώρας ή λέξη-κλειδί.")
 
     # -----------------------------------------------------
-    # TAB 2: ΕΥΡΕΤΗΡΙΟ ΧΩΡΩΝ (COUNTRY DIRECTORY)
+    # TAB 2: ΕΥΡΕΤΗΡΙΟ ΧΩΡΩΝ
     # -----------------------------------------------------
     with tab2:
         st.subheader("🌍 Κατάλογος Χωρών & Συγκεντρωτικοί Κανόνες")
@@ -310,7 +394,7 @@ def main():
 
             if countries:
                 selected_country = st.selectbox(
-                    "📌 Επιλέξτε Χώρα για προβολή όλων των λιμανιών & κανόνων:",
+                    "📌 Επιλέξτε Χώρα από τη λίστα:",
                     countries,
                 )
 
@@ -319,7 +403,7 @@ def main():
                     ports_in_country = sorted(list(set([l[1] for l in country_logs])))
 
                     st.markdown(
-                        f"### 📍 Χώρα: **{selected_country}** ({len(ports_in_country)} Λιμάνια: {', '.join(ports_in_country)})"
+                        f"### 📍 Χώρα: **{selected_country}** ({len(ports_in_country)} Λιμάνια: `{', '.join(ports_in_country)}`)"
                     )
 
                     c_tab_on, c_tab_off, c_tab_all = st.tabs(
@@ -331,40 +415,29 @@ def main():
                     )
 
                     with c_tab_on:
-                        c_logs_on = [
-                            l for l in country_logs if l[3] in ["On-signer", "Και τα δύο"]
-                        ]
-                        render_log_cards(c_logs_on)
+                        render_log_cards(country_logs, filter_type="ON")
 
                     with c_tab_off:
-                        c_logs_off = [
-                            l for l in country_logs if l[3] in ["Off-signer", "Και τα δύο"]
-                        ]
-                        render_log_cards(c_logs_off)
+                        render_log_cards(country_logs, filter_type="OFF")
 
                     with c_tab_all:
-                        render_log_cards(country_logs)
-
+                        render_log_cards(country_logs, filter_type="ALL")
             else:
-                st.info("Δεν έχουν καταχωρηθεί ακόμη χώρες στη βάση.")
+                st.info("Δεν έχουν καταχωρηθεί ακόμη χώρες.")
         else:
-            st.info("Η βάση δεδομένων είναι κενή.")
+            st.info("⚠️ Η βάση δεδομένων είναι ακόμα κενή. Προσθέστε μια καταχώρηση στο Tab '➕ Νέα Καταχώρηση'.")
 
     # -----------------------------------------------------
-    # TAB 3: ΚΑΤΑΧΩΡΗΣΗ ΝΕΟΥ ΣΥΜΒΑΝΤΟΣ
+    # TAB 3: ΝΕΑ ΚΑΤΑΧΩΡΗΣΗ
     # -----------------------------------------------------
     with tab3:
-        st.subheader("Καταχώρηση Νέας Σημείωσης / Δυσκολίας")
+        st.subheader("Καταχώρηση Νέων Οδηγιών / Δυσκολιών")
 
         with st.form("add_log_form", clear_on_submit=True):
             f_col1, f_col2 = st.columns(2)
             with f_col1:
-                input_port = st.text_input("Όνομα Λιμανιού* (π.χ. Garyville)")
-                input_country = st.text_input("Χώρα* (π.χ. USA)")
-                input_signer = st.selectbox(
-                    "Τύπος Μετακίνησης*",
-                    ["On-signer", "Off-signer", "Και τα δύο"],
-                )
+                input_port = st.text_input("Όνομα Λιμανιού* (π.χ. Singapore, Garyville)")
+                input_country = st.text_input("Χώρα* (π.χ. Singapore, USA)")
                 input_nat = st.selectbox(
                     "Εθνικότητα*", ["Όλες", "Έλληνας", "Φιλιππινέζος"]
                 )
@@ -385,6 +458,7 @@ def main():
                         "Agent Negligence / Delay",
                         "Άλλο",
                     ],
+                    default=["Visa / Schengen / US C1-D"],
                 )
                 input_severity = st.selectbox(
                     "Επίπεδο Σοβαρότητας*",
@@ -398,10 +472,25 @@ def main():
                 severity_clean = input_severity.split()[0]
 
             st.markdown("---")
-            input_desc = st.text_area("Περιγραφή Συμβάντος / Οδηγίες*")
+            st.markdown("#### 📝 Οδηγίες & Κανόνες (Συμπληρώστε όποιο ισχύει)")
+
+            col_on, col_off = st.columns(2)
+            with col_on:
+                input_desc_on = st.text_area(
+                    "🟢 Οδηγίες για ON-SIGNERS (Επιβίβαση)",
+                    placeholder="Π.χ. Απαιτείται OK to Board 48h πριν, ESTA, Guarantee Letter...",
+                    height=130,
+                )
+            with col_off:
+                input_desc_off = st.text_area(
+                    "🔴 Οδηγίες για OFF-SIGNERS (Αποβίβαση)",
+                    placeholder="Π.χ. Δεν επιτρέπεται shore leave, απαιτείται συνοδεία πράκτορα στο αεροδρόμιο...",
+                    height=130,
+                )
+
             input_docs = st.text_input(
-                "📋 Απαιτούμενα Έγγραφα (διαχωρίστε με κόμμα)",
-                placeholder="π.χ. US C1/D Visa, ESTA, Guarantee Letter",
+                "📋 Απαιτούμενα Έγγραφα / Checklist (διαχωρίστε με κόμμα)",
+                placeholder="π.χ. US C1/D Visa, Passports, Flight Tickets",
             )
 
             col_agent1, col_agent2 = st.columns(2)
@@ -410,27 +499,189 @@ def main():
             with col_agent2:
                 input_email = st.text_input("📧 Contact Email")
 
-            submitted = st.form_submit_button("Αποθήκευση στη Βάση")
+            submitted = st.form_submit_button("💾 Αποθήκευση στη Βάση")
 
             if submitted:
-                if input_port and input_country and input_desc and input_types:
+                if input_port and input_country and input_types and (input_desc_on or input_desc_off):
                     types_str = ", ".join(input_types)
                     add_log(
                         input_port,
                         input_country,
-                        input_signer,
                         input_nat,
                         input_role,
                         types_str,
                         severity_clean,
-                        input_desc,
+                        input_desc_on,
+                        input_desc_off,
                         input_docs,
                         input_agent,
                         input_email,
                     )
-                    st.success("Η εγγραφή αποθηκεύτηκε επιτυχώς στη βάση!")
+                    st.success("✅ Η εγγραφή αποθηκεύτηκε επιτυχώς στη βάση!")
+                    st.rerun()
                 else:
-                    st.error("Συμπληρώστε τα υποχρεωτικά πεδία (*).")
+                    st.error("❌ Παρακαλώ συμπληρώστε τα υποχρεωτικά πεδία (*) και τουλάχιστον μία οδηγία (On-signer ή Off-signer).")
+
+    # -----------------------------------------------------
+    # TAB 4: ΕΠΕΞΕΡΓΑΣΙΑ & ΔΙΑΓΡΑΦΗ
+    # -----------------------------------------------------
+    with tab4:
+        st.subheader("✏️ Επεξεργασία & Διόρθωση Εγγραφών")
+        all_logs_edit = fetch_all_logs()
+
+        if not all_logs_edit:
+            st.info("Δεν υπάρχουν εγγραφές στη βάση για επεξεργασία.")
+        else:
+            log_options = {
+                f"#{l[0]} - {l[1]} ({l[2]}) [{l[6]}]": l for l in all_logs_edit
+            }
+            selected_option = st.selectbox(
+                "Επιλέξτε εγγραφή για τροποποίηση:", list(log_options.keys())
+            )
+
+            selected_log = log_options[selected_option]
+            (
+                e_id,
+                e_port,
+                e_country,
+                _,
+                e_nat,
+                e_role,
+                e_type,
+                e_severity,
+                e_old_desc,
+                e_desc_on,
+                e_desc_off,
+                e_docs,
+                e_agent,
+                e_email,
+                _,
+            ) = selected_log
+
+            # Αν είναι παλιά εγγραφή χωρίς desc_on/off, βάζουμε το old_desc στο desc_on
+            if not e_desc_on and not e_desc_off and e_old_desc:
+                e_desc_on = e_old_desc
+
+            st.markdown("---")
+            with st.form("edit_log_form"):
+                ec1, ec2 = st.columns(2)
+                with ec1:
+                    edit_port = st.text_input("Όνομα Λιμανιού", value=e_port)
+                    edit_country = st.text_input("Χώρα", value=e_country)
+                    edit_nat = st.selectbox(
+                        "Εθνικότητα",
+                        ["Όλες", "Έλληνας", "Φιλιππινέζος"],
+                        index=["Όλες", "Έλληνας", "Φιλιππινέζος"].index(e_nat)
+                        if e_nat in ["Όλες", "Έλληνας", "Φιλιππινέζος"]
+                        else 0,
+                    )
+
+                with ec2:
+                    edit_role = st.selectbox(
+                        "Ιδιότητα",
+                        ["Όλοι", "Πλήρωμα", "Superintendent", "Τεχνικός"],
+                        index=["Όλοι", "Πλήρωμα", "Superintendent", "Τεχνικός"].index(e_role)
+                        if e_role in ["Όλοι", "Πλήρωμα", "Superintendent", "Τεχνικός"]
+                        else 0,
+                    )
+
+                    all_categories = [
+                        "OK to Board Issue",
+                        "Visa / Schengen / US C1-D",
+                        "Seaman's Book / Transit",
+                        "Shore Leave Restriction",
+                        "Customs / Technical Equipment",
+                        "Agent Negligence / Delay",
+                        "Άλλο",
+                    ]
+                    current_cats = [c.strip() for c in e_type.split(",") if c.strip() in all_categories]
+                    edit_types = st.multiselect(
+                        "Κατηγορίες Θέματος",
+                        all_categories,
+                        default=current_cats if current_cats else [all_categories[0]],
+                    )
+
+                    sev_index = 0
+                    if e_severity == "Medium":
+                        sev_index = 1
+                    elif e_severity == "High":
+                        sev_index = 2
+                    elif e_severity == "Critical":
+                        sev_index = 3
+
+                    edit_severity = st.selectbox(
+                        "Επίπεδο Σοβαρότητας",
+                        [
+                            "Low (Απλή πληροφορία)",
+                            "Medium (Προσοχή)",
+                            "High (Μεγάλη δυσκολία)",
+                            "Critical (Απαγόρευση)",
+                        ],
+                        index=sev_index,
+                    )
+                    edit_sev_clean = edit_severity.split()[0]
+
+                st.markdown("---")
+                col_e_on, col_e_off = st.columns(2)
+                with col_e_on:
+                    edit_desc_on = st.text_area(
+                        "🟢 Οδηγίες για ON-SIGNERS (Επιβίβαση)",
+                        value=e_desc_on if e_desc_on else "",
+                        height=130,
+                    )
+                with col_e_off:
+                    edit_desc_off = st.text_area(
+                        "🔴 Οδηγίες για OFF-SIGNERS (Αποβίβαση)",
+                        value=e_desc_off if e_desc_off else "",
+                        height=130,
+                    )
+
+                edit_docs = st.text_input(
+                    "📋 Απαιτούμενα Έγγραφα (διαχωρίστε με κόμμα)",
+                    value=e_docs if e_docs else "",
+                )
+
+                ec_a1, ec_a2 = st.columns(2)
+                with ec_a1:
+                    edit_agent = st.text_area(
+                        "Στοιχεία Πράκτορα / Σημειώσεις",
+                        value=e_agent if e_agent else "",
+                    )
+                with ec_a2:
+                    edit_email = st.text_input(
+                        "📧 Contact Email",
+                        value=e_email if e_email else "",
+                    )
+
+                col_btn1, col_btn2 = st.columns([1, 1])
+                with col_btn1:
+                    update_submitted = st.form_submit_button("💾 Ενημέρωση Εγγραφής")
+                with col_btn2:
+                    delete_submitted = st.form_submit_button("🗑️ Διαγραφή Εγγραφής")
+
+                if update_submitted:
+                    types_str = ", ".join(edit_types)
+                    update_log(
+                        e_id,
+                        edit_port,
+                        edit_country,
+                        edit_nat,
+                        edit_role,
+                        types_str,
+                        edit_sev_clean,
+                        edit_desc_on,
+                        edit_desc_off,
+                        edit_docs,
+                        edit_agent,
+                        edit_email,
+                    )
+                    st.success(f"✅ Η εγγραφή #{e_id} ενημερώθηκε επιτυχώς!")
+                    st.rerun()
+
+                if delete_submitted:
+                    delete_log(e_id)
+                    st.warning(f"🗑️ Η εγγραφή #{e_id} διαγράφηκε.")
+                    st.rerun()
 
 
 if __name__ == "__main__":
