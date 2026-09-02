@@ -3,8 +3,113 @@ from datetime import datetime
 import streamlit as st
 
 # ---------------------------------------------------------
-# 0. ΑΣΦΑΛΕΙΑ / PASSWORD CHECK
+# 0. ΑΣΦΑΛΕΙΑ & THEMING (CUSTOM CSS)
 # ---------------------------------------------------------
+def apply_custom_theme():
+    # Επιλογή Θέματος στη Sidebar
+    with st.sidebar:
+        st.markdown("### 🎨 Εμφάνιση & Θέμα")
+        theme_choice = st.selectbox(
+            "Επιλέξτε Θέμα (Theme):",
+            ["Dark (Σκούρο)", "Light (Φωτεινό)", "Pink (Ροζ)"],
+            index=0,
+        )
+
+    # CSS Palettes
+    if theme_choice == "Dark (Σκούρο)":
+        bg_color = "#121214"
+        card_bg = "#1E1E24"
+        text_color = "#E4E6EB"
+        border_color = "#2D2D38"
+        accent_color = "#3B82F6"
+        input_bg = "#262630"
+        header_color = "#60A5FA"
+    elif theme_choice == "Light (Φωτεινό)":
+        bg_color = "#F8FAFC"
+        card_bg = "#FFFFFF"
+        text_color = "#1E293B"
+        border_color = "#E2E8F0"
+        accent_color = "#2563EB"
+        input_bg = "#F1F5F9"
+        header_color = "#1D4ED8"
+    else:  # Pink Theme
+        bg_color = "#FFF5F7"
+        card_bg = "#FFFFFF"
+        text_color = "#4A1525"
+        border_color = "#FBCFE8"
+        accent_color = "#EC4899"
+        input_bg = "#FCE7F3"
+        header_color = "#DB2777"
+
+    # Inject Dynamic CSS
+    css = f"""
+    <style>
+        /* General App Styling */
+        .stApp {{
+            background-color: {bg_color};
+            color: {text_color};
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }}
+        
+        /* Headers */
+        h1, h2, h3 {{
+            color: {header_color} !important;
+            font-weight: 700 !important;
+        }}
+        
+        /* Cards / Containers */
+        div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column"] {{
+            border-radius: 12px;
+        }}
+        
+        /* Inputs & Textareas */
+        .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] {{
+            background-color: {input_bg} !important;
+            color: {text_color} !important;
+            border-radius: 10px !important;
+            border: 1px solid {border_color} !important;
+            box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.03) !important;
+        }}
+        
+        /* Buttons */
+        .stButton>button {{
+            background-color: {accent_color} !important;
+            color: #FFFFFF !important;
+            border-radius: 10px !important;
+            border: none !important;
+            font-weight: 600 !important;
+            padding: 0.5rem 1.2rem !important;
+            transition: all 0.2s ease-in-out !important;
+            box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1) !important;
+        }}
+        .stButton>button:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0px 6px 15px rgba(0, 0, 0, 0.15) !important;
+            opacity: 0.95;
+        }}
+        
+        /* Tabs Styling */
+        button[data-baseweb="tab"] {{
+            border-radius: 8px 8px 0px 0px !important;
+            padding: 10px 20px !important;
+            font-weight: 600 !important;
+            color: {text_color} !important;
+        }}
+        button[aria-selected="true"] {{
+            border-bottom: 3px solid {accent_color} !important;
+            color: {accent_color} !important;
+        }}
+        
+        /* Alerts & Info Boxes */
+        .stAlert {{
+            border-radius: 12px !important;
+            box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.05) !important;
+        }}
+    </style>
+    """
+    st.markdown(css, unsafe_allow_html=True)
+
+
 def check_password():
     if "authenticated" not in st.session_state:
         st.session_state["authenticated"] = False
@@ -59,7 +164,6 @@ def init_db():
     """
     )
 
-    # Έλεγχος & Αυτόματη Αναβάθμιση Πεδίων στη Βάση
     cursor.execute("PRAGMA table_info(port_logs)")
     columns = [col[1] for col in cursor.fetchall()]
 
@@ -349,12 +453,15 @@ def main():
         page_title="Crew Operations & Port Intelligence", layout="wide"
     )
 
+    apply_custom_theme()
+
     if not check_password():
         return
 
     init_db()
 
     with st.sidebar:
+        st.markdown("---")
         st.write("👤 Συνδεδεμένος Χρήστης")
         if st.button("Αποσύνδεση (Logout)"):
             st.session_state["authenticated"] = False
@@ -591,7 +698,6 @@ def main():
 
             selected_log = log_options[selected_option]
 
-            # Αντιστοίχιση μεταβλητών
             e_id = selected_log[0]
             e_port = selected_log[1]
             e_country = selected_log[2]
@@ -609,7 +715,6 @@ def main():
             e_agent = selected_log[14] if selected_log[14] else ""
             e_email = selected_log[15] if selected_log[15] else ""
 
-            # Fallbacks για παλιές εγγραφές
             if not e_desc_on and not e_desc_off and e_old_desc:
                 e_desc_on = e_old_desc
             if not e_docs_on and not e_docs_off and e_old_docs:
