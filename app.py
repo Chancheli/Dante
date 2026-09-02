@@ -3,10 +3,9 @@ from datetime import datetime
 import streamlit as st
 
 # ---------------------------------------------------------
-# 0. ΑΣΦΑΛΕΙΑ & THEMING (CUSTOM CSS)
+# 0. ΑΣΦΑΛΕΙΑ & THEMING (CUSTOM CSS WITH FULL CONTRAST)
 # ---------------------------------------------------------
 def apply_custom_theme():
-    # Επιλογή Θέματος στη Sidebar
     with st.sidebar:
         st.markdown("### 🎨 Εμφάνιση & Θέμα")
         theme_choice = st.selectbox(
@@ -15,95 +14,123 @@ def apply_custom_theme():
             index=0,
         )
 
-    # CSS Palettes
+    # Καθορισμός χρωματικών παλετών
     if theme_choice == "Dark (Σκούρο)":
         bg_color = "#121214"
         card_bg = "#1E1E24"
         text_color = "#E4E6EB"
-        border_color = "#2D2D38"
+        label_color = "#FFFFFF"
+        border_color = "#3A3A4C"
         accent_color = "#3B82F6"
-        input_bg = "#262630"
+        input_bg = "#22222A"
+        input_text = "#FFFFFF"
+        placeholder_color = "#9CA3AF"
         header_color = "#60A5FA"
+        tab_unselected = "#9CA3AF"
     elif theme_choice == "Light (Φωτεινό)":
         bg_color = "#F8FAFC"
         card_bg = "#FFFFFF"
         text_color = "#1E293B"
-        border_color = "#E2E8F0"
+        label_color = "#0F172A"
+        border_color = "#CBD5E1"
         accent_color = "#2563EB"
-        input_bg = "#F1F5F9"
+        input_bg = "#FFFFFF"
+        input_text = "#0F172A"
+        placeholder_color = "#64748B"
         header_color = "#1D4ED8"
+        tab_unselected = "#64748B"
     else:  # Pink Theme
-        bg_color = "#FFF5F7"
+        bg_color = "#FFF0F5"
         card_bg = "#FFFFFF"
         text_color = "#4A1525"
+        label_color = "#831843"
         border_color = "#FBCFE8"
-        accent_color = "#EC4899"
-        input_bg = "#FCE7F3"
-        header_color = "#DB2777"
+        accent_color = "#DB2777"
+        input_bg = "#FFFFFF"
+        input_text = "#831843"
+        placeholder_color = "#9D4C6C"
+        header_color = "#BE185D"
+        tab_unselected = "#9D4C6C"
 
-    # Inject Dynamic CSS
+    # Inject Targeted CSS για 100% Ευανάγνωστα Στοιχεία
     css = f"""
     <style>
-        /* General App Styling */
+        /* General App */
         .stApp {{
-            background-color: {bg_color};
-            color: {text_color};
+            background-color: {bg_color} !important;
+            color: {text_color} !important;
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
         }}
         
-        /* Headers */
+        /* Headers & Titles */
         h1, h2, h3 {{
             color: {header_color} !important;
             font-weight: 700 !important;
         }}
         
-        /* Cards / Containers */
-        div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column"] {{
-            border-radius: 12px;
+        /* Labels πάνω από τα Input fields & Selectboxes */
+        label, div[data-testid="stMarkdownContainer"] p {{
+            color: {label_color} !important;
+            font-weight: 600 !important;
         }}
         
-        /* Inputs & Textareas */
-        .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] {{
+        /* Input Fields & Textareas */
+        .stTextInput input, .stTextArea textarea {{
             background-color: {input_bg} !important;
-            color: {text_color} !important;
-            border-radius: 10px !important;
-            border: 1px solid {border_color} !important;
-            box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.03) !important;
+            color: {input_text} !important;
+            border-radius: 8px !important;
+            border: 1.5px solid {border_color} !important;
+        }}
+        
+        /* Placeholders inside inputs */
+        ::placeholder {{
+            color: {placeholder_color} !important;
+            opacity: 0.8 !important;
+        }}
+
+        /* Selectboxes & Multiselects */
+        div[data-baseweb="select"] > div {{
+            background-color: {input_bg} !important;
+            color: {input_text} !important;
+            border-radius: 8px !important;
+            border: 1.5px solid {border_color} !important;
+        }}
+        div[data-baseweb="select"] span {{
+            color: {input_text} !important;
         }}
         
         /* Buttons */
         .stButton>button {{
             background-color: {accent_color} !important;
             color: #FFFFFF !important;
-            border-radius: 10px !important;
+            border-radius: 8px !important;
             border: none !important;
             font-weight: 600 !important;
             padding: 0.5rem 1.2rem !important;
-            transition: all 0.2s ease-in-out !important;
-            box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1) !important;
+            box-shadow: 0px 3px 8px rgba(0, 0, 0, 0.12) !important;
         }}
         .stButton>button:hover {{
-            transform: translateY(-2px);
-            box-shadow: 0px 6px 15px rgba(0, 0, 0, 0.15) !important;
-            opacity: 0.95;
+            opacity: 0.9 !important;
+            transform: translateY(-1px);
         }}
         
-        /* Tabs Styling */
-        button[data-baseweb="tab"] {{
-            border-radius: 8px 8px 0px 0px !important;
-            padding: 10px 20px !important;
+        /* Tabs Fix - Για να διαβάζονται και τα ανενεργά Tabs */
+        button[data-baseweb="tab"] p {{
+            color: {tab_unselected} !important;
             font-weight: 600 !important;
-            color: {text_color} !important;
+            font-size: 1rem !important;
+        }}
+        button[aria-selected="true"] p {{
+            color: {accent_color} !important;
+            font-weight: 700 !important;
         }}
         button[aria-selected="true"] {{
             border-bottom: 3px solid {accent_color} !important;
-            color: {accent_color} !important;
         }}
         
-        /* Alerts & Info Boxes */
+        /* Info & Warning Boxes */
         .stAlert {{
-            border-radius: 12px !important;
-            box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.05) !important;
+            border-radius: 10px !important;
         }}
     </style>
     """
