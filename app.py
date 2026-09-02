@@ -50,6 +50,8 @@ def init_db():
             desc_on TEXT,
             desc_off TEXT,
             required_docs TEXT,
+            req_docs_on TEXT,
+            req_docs_off TEXT,
             agent_details TEXT,
             contact_email TEXT,
             date_logged TEXT NOT NULL
@@ -65,6 +67,10 @@ def init_db():
         cursor.execute("ALTER TABLE port_logs ADD COLUMN desc_on TEXT")
     if "desc_off" not in columns:
         cursor.execute("ALTER TABLE port_logs ADD COLUMN desc_off TEXT")
+    if "req_docs_on" not in columns:
+        cursor.execute("ALTER TABLE port_logs ADD COLUMN req_docs_on TEXT")
+    if "req_docs_off" not in columns:
+        cursor.execute("ALTER TABLE port_logs ADD COLUMN req_docs_off TEXT")
 
     conn.commit()
     conn.close()
@@ -79,7 +85,8 @@ def add_log(
     severity,
     desc_on,
     desc_off,
-    required_docs,
+    req_docs_on,
+    req_docs_off,
     agent_details,
     contact_email,
 ):
@@ -88,12 +95,13 @@ def add_log(
     today_str = datetime.now().strftime("%Y-%m-%d")
 
     combined_desc = f"ON: {desc_on}\nOFF: {desc_off}".strip()
+    combined_docs = f"ON: {req_docs_on}\nOFF: {req_docs_off}".strip()
 
     cursor.execute(
         """
         INSERT INTO port_logs 
-        (port_name, country, nationality, role, issue_type, severity, description, desc_on, desc_off, required_docs, agent_details, contact_email, date_logged)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (port_name, country, nationality, role, issue_type, severity, description, desc_on, desc_off, required_docs, req_docs_on, req_docs_off, agent_details, contact_email, date_logged)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """,
         (
             port_name.strip().upper(),
@@ -105,7 +113,9 @@ def add_log(
             combined_desc,
             desc_on,
             desc_off,
-            required_docs,
+            combined_docs,
+            req_docs_on,
+            req_docs_off,
             agent_details,
             contact_email,
             today_str,
@@ -125,19 +135,21 @@ def update_log(
     severity,
     desc_on,
     desc_off,
-    required_docs,
+    req_docs_on,
+    req_docs_off,
     agent_details,
     contact_email,
 ):
     conn = sqlite3.connect("crew_port_rules.db")
     cursor = conn.cursor()
     combined_desc = f"ON: {desc_on}\nOFF: {desc_off}".strip()
+    combined_docs = f"ON: {req_docs_on}\nOFF: {req_docs_off}".strip()
 
     cursor.execute(
         """
         UPDATE port_logs 
         SET port_name=?, country=?, nationality=?, role=?, issue_type=?, severity=?, 
-            description=?, desc_on=?, desc_off=?, required_docs=?, agent_details=?, contact_email=?
+            description=?, desc_on=?, desc_off=?, required_docs=?, req_docs_on=?, req_docs_off=?, agent_details=?, contact_email=?
         WHERE id=?
     """,
         (
@@ -150,7 +162,9 @@ def update_log(
             combined_desc,
             desc_on,
             desc_off,
-            required_docs,
+            combined_docs,
+            req_docs_on,
+            req_docs_off,
             agent_details,
             contact_email,
             log_id,
@@ -171,11 +185,10 @@ def delete_log(log_id):
 def fetch_all_logs():
     conn = sqlite3.connect("crew_port_rules.db")
     cursor = conn.cursor()
-    # Αυστηρός καθορισμός σειράς στηλών
     cursor.execute(
         """
         SELECT id, port_name, country, signer_type, nationality, role, issue_type, severity, 
-               description, desc_on, desc_off, required_docs, agent_details, contact_email, date_logged 
+               description, desc_on, desc_off, required_docs, req_docs_on, req_docs_off, agent_details, contact_email, date_logged 
         FROM port_logs 
         ORDER BY id DESC
     """
@@ -191,7 +204,7 @@ def search_logs(query_text, nationality=None, role=None):
 
     sql = """
         SELECT id, port_name, country, signer_type, nationality, role, issue_type, severity, 
-               description, desc_on, desc_off, required_docs, agent_details, contact_email, date_logged 
+               description, desc_on, desc_off, required_docs, req_docs_on, req_docs_off, agent_details, contact_email, date_logged 
         FROM port_logs WHERE 1=1
     """
     params = []
@@ -206,8 +219,10 @@ def search_logs(query_text, nationality=None, role=None):
             OR UPPER(COALESCE(desc_off,'')) LIKE ?
             OR UPPER(COALESCE(agent_details,'')) LIKE ? 
             OR UPPER(COALESCE(required_docs,'')) LIKE ?
+            OR UPPER(COALESCE(req_docs_on,'')) LIKE ?
+            OR UPPER(COALESCE(req_docs_off,'')) LIKE ?
         )"""
-        params.extend([search_pattern] * 7)
+        params.extend([search_pattern] * 9)
 
     if nationality and nationality != "Όλες":
         sql += " AND (nationality = ? OR nationality = 'Όλες')"
@@ -236,13 +251,15 @@ def render_log_cards(logs_list, filter_type="ALL"):
     for log in logs_list:
         desc_on = log[9] if log[9] else ""
         desc_off = log[10] if log[10] else ""
+        docs_on = log[12] if log[12] else ""
+        docs_off = log[13] if log[13] else ""
         old_desc = log[8] if log[8] else ""
 
         if filter_type == "ON":
-            if (desc_on and desc_on.strip()) or (old_desc and old_desc.strip()):
+            if (desc_on and desc_on.strip()) or (docs_on and docs_on.strip()) or (old_desc and old_desc.strip()):
                 filtered.append(log)
         elif filter_type == "OFF":
-            if (desc_off and desc_off.strip()) or (old_desc and old_desc.strip()):
+            if (desc_off and desc_off.strip()) or (docs_off and docs_off.strip()) or (old_desc and old_desc.strip()):
                 filtered.append(log)
         else:
             filtered.append(log)
@@ -262,10 +279,12 @@ def render_log_cards(logs_list, filter_type="ALL"):
         old_desc = log[8] if log[8] else ""
         desc_on = log[9] if log[9] else ""
         desc_off = log[10] if log[10] else ""
-        req_docs = log[11] if log[11] else ""
-        agent = log[12] if log[12] else ""
-        c_email = log[13] if log[13] else ""
-        date_logged = log[14] if log[14] else ""
+        old_docs = log[11] if log[11] else ""
+        docs_on = log[12] if log[12] else ""
+        docs_off = log[13] if log[13] else ""
+        agent = log[14] if log[14] else ""
+        c_email = log[15] if log[15] else ""
+        date_logged = log[16] if log[16] else ""
 
         st.markdown("---")
         header_badge = (
@@ -283,27 +302,35 @@ def render_log_cards(logs_list, filter_type="ALL"):
             f"📅 Ημερομηνία: **{date_logged}** | 👥 Αφορά: **{nat}** ({role})"
         )
 
-        # Εμφάνιση Οδηγιών On-signer
+        # Εμφάνιση Οδηγιών & Εγγράφων On-signer
         if filter_type in ["ALL", "ON"]:
-            if desc_on and desc_on.strip():
-                st.markdown("🟢 **Οδηγίες για On-signers (Επιβίβαση):**")
-                st.info(desc_on)
+            if (desc_on and desc_on.strip()) or (docs_on and docs_on.strip()):
+                st.markdown("🟢 **ON-SIGNERS (Επιβίβαση):**")
+                if desc_on and desc_on.strip():
+                    st.info(f"**Οδηγίες:**\n{desc_on}")
+                if docs_on and docs_on.strip():
+                    st.markdown("**📋 Απαιτούμενα Έγγραφα (On):**")
+                    for doc in [d.strip() for d in docs_on.split(",") if d.strip()]:
+                        st.markdown(f"- 📄 {doc}")
 
-        # Εμφάνιση Οδηγιών Off-signer
+        # Εμφάνιση Οδηγιών & Εγγράφων Off-signer
         if filter_type in ["ALL", "OFF"]:
-            if desc_off and desc_off.strip():
-                st.markdown("🔴 **Οδηγίες για Off-signers (Αποβίβαση):**")
-                st.warning(desc_off)
+            if (desc_off and desc_off.strip()) or (docs_off and docs_off.strip()):
+                st.markdown("🔴 **OFF-SIGNERS (Αποβίβαση):**")
+                if desc_off and desc_off.strip():
+                    st.warning(f"**Οδηγίες:**\n{desc_off}")
+                if docs_off and docs_off.strip():
+                    st.markdown("**📋 Απαιτούμενα Έγγραφα (Off):**")
+                    for doc in [d.strip() for d in docs_off.split(",") if d.strip()]:
+                        st.markdown(f"- 📄 {doc}")
 
-        # Παλαιότερες σημειώσεις (αν υπάρχουν)
+        # Παλαιότερες σημειώσεις (για συμβατότητα)
         if old_desc and old_desc.strip() and not (desc_on or desc_off):
             st.markdown("📝 **Γενική Περιγραφή / Οδηγίες:**")
             st.write(old_desc)
-
-        if req_docs and req_docs.strip():
-            st.markdown("##### 📋 Απαιτούμενα Έγγραφα / Checklist:")
-            docs_list = [d.strip() for d in req_docs.split(",") if d.strip()]
-            for doc in docs_list:
+        if old_docs and old_docs.strip() and not (docs_on or docs_off):
+            st.markdown("📋 **Γενικά Απαιτούμενα Έγγραφα:**")
+            for doc in [d.strip() for d in old_docs.split(",") if d.strip()]:
                 st.markdown(f"- 📄 {doc}")
 
         if (agent and agent.strip()) or (c_email and c_email.strip()):
@@ -489,27 +516,32 @@ def main():
                 severity_clean = input_severity.split()[0]
 
             st.markdown("---")
-            st.markdown("#### 📝 Οδηγίες & Κανόνες (Συμπληρώστε όποιο ισχύει)")
+            st.markdown("#### 📝 Οδηγίες & Απαιτούμενα Έγγραφα (Συμπληρώστε όποιο ισχύει)")
 
             col_on, col_off = st.columns(2)
             with col_on:
                 input_desc_on = st.text_area(
                     "🟢 Οδηγίες για ON-SIGNERS (Επιβίβαση)",
                     placeholder="Π.χ. Απαιτείται OK to Board 48h πριν, ESTA, Guarantee Letter...",
-                    height=130,
+                    height=120,
                 )
+                input_docs_on = st.text_input(
+                    "📋 Απαιτούμενα Έγγραφα (ON-SIGNERS)",
+                    placeholder="π.χ. US C1/D Visa, Flight Ticket, Guarantee Letter",
+                )
+
             with col_off:
                 input_desc_off = st.text_area(
                     "🔴 Οδηγίες για OFF-SIGNERS (Αποβίβαση)",
                     placeholder="Π.χ. Δεν επιτρέπεται shore leave, απαιτείται συνοδεία πράκτορα στο αεροδρόμιο...",
-                    height=130,
+                    height=120,
+                )
+                input_docs_off = st.text_input(
+                    "📋 Απαιτούμενα Έγγραφα (OFF-SIGNERS)",
+                    placeholder="π.χ. Transit Visa, Exit Stamp, SIRB",
                 )
 
-            input_docs = st.text_input(
-                "📋 Απαιτούμενα Έγγραφα / Checklist (διαχωρίστε με κόμμα)",
-                placeholder="π.χ. US C1/D Visa, Passports, Flight Tickets",
-            )
-
+            st.markdown("---")
             col_agent1, col_agent2 = st.columns(2)
             with col_agent1:
                 input_agent = st.text_area("Στοιχεία Πράκτορα / Σημειώσεις")
@@ -519,7 +551,7 @@ def main():
             submitted = st.form_submit_button("💾 Αποθήκευση στη Βάση")
 
             if submitted:
-                if input_port and input_country and input_types and (input_desc_on or input_desc_off):
+                if input_port and input_country and input_types and (input_desc_on or input_desc_off or input_docs_on or input_docs_off):
                     types_str = ", ".join(input_types)
                     add_log(
                         input_port,
@@ -530,14 +562,15 @@ def main():
                         severity_clean,
                         input_desc_on,
                         input_desc_off,
-                        input_docs,
+                        input_docs_on,
+                        input_docs_off,
                         input_agent,
                         input_email,
                     )
                     st.success("✅ Η εγγραφή αποθηκεύτηκε επιτυχώς στη βάση!")
                     st.rerun()
                 else:
-                    st.error("❌ Παρακαλώ συμπληρώστε τα υποχρεωτικά πεδία (*) και τουλάχιστον μία οδηγία (On-signer ή Off-signer).")
+                    st.error("❌ Παρακαλώ συμπληρώστε τα υποχρεωτικά πεδία (*) και τουλάχιστον μία οδηγία ή έγγραφο (On-signer ή Off-signer).")
 
     # -----------------------------------------------------
     # TAB 4: ΕΠΕΞΕΡΓΑΣΙΑ & ΔΙΑΓΡΑΦΗ
@@ -558,7 +591,7 @@ def main():
 
             selected_log = log_options[selected_option]
 
-            # Σωστή αντιστοίχιση μεταβλητών βάσει του SELECT query
+            # Αντιστοίχιση μεταβλητών
             e_id = selected_log[0]
             e_port = selected_log[1]
             e_country = selected_log[2]
@@ -570,12 +603,17 @@ def main():
             e_old_desc = selected_log[8] if selected_log[8] else ""
             e_desc_on = selected_log[9] if selected_log[9] else ""
             e_desc_off = selected_log[10] if selected_log[10] else ""
-            e_docs = selected_log[11] if selected_log[11] else ""
-            e_agent = selected_log[12] if selected_log[12] else ""
-            e_email = selected_log[13] if selected_log[13] else ""
+            e_old_docs = selected_log[11] if selected_log[11] else ""
+            e_docs_on = selected_log[12] if selected_log[12] else ""
+            e_docs_off = selected_log[13] if selected_log[13] else ""
+            e_agent = selected_log[14] if selected_log[14] else ""
+            e_email = selected_log[15] if selected_log[15] else ""
 
+            # Fallbacks για παλιές εγγραφές
             if not e_desc_on and not e_desc_off and e_old_desc:
                 e_desc_on = e_old_desc
+            if not e_docs_on and not e_docs_off and e_old_docs:
+                e_docs_on = e_old_docs
 
             st.markdown("---")
             with st.form("edit_log_form"):
@@ -642,20 +680,25 @@ def main():
                     edit_desc_on = st.text_area(
                         "🟢 Οδηγίες για ON-SIGNERS (Επιβίβαση)",
                         value=e_desc_on,
-                        height=130,
+                        height=120,
                     )
+                    edit_docs_on = st.text_input(
+                        "📋 Απαιτούμενα Έγγραφα (ON-SIGNERS)",
+                        value=e_docs_on,
+                    )
+
                 with col_e_off:
                     edit_desc_off = st.text_area(
                         "🔴 Οδηγίες για OFF-SIGNERS (Αποβίβαση)",
                         value=e_desc_off,
-                        height=130,
+                        height=120,
+                    )
+                    edit_docs_off = st.text_input(
+                        "📋 Απαιτούμενα Έγγραφα (OFF-SIGNERS)",
+                        value=e_docs_off,
                     )
 
-                edit_docs = st.text_input(
-                    "📋 Απαιτούμενα Έγγραφα (διαχωρίστε με κόμμα)",
-                    value=e_docs,
-                )
-
+                st.markdown("---")
                 ec_a1, ec_a2 = st.columns(2)
                 with ec_a1:
                     edit_agent = st.text_area(
@@ -686,7 +729,8 @@ def main():
                         edit_sev_clean,
                         edit_desc_on,
                         edit_desc_off,
-                        edit_docs,
+                        edit_docs_on,
+                        edit_docs_off,
                         edit_agent,
                         edit_email,
                     )
