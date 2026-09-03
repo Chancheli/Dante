@@ -679,22 +679,28 @@ def main():
 
                         with st.expander(
                             f"⚓ **ΛΙΜΑΝΙ: {port}** ({len(port_specific_logs)} Υποθέσεις / Cases)",
-                            expanded=True,
+                            expanded=False,
                         ):
-                            # Dropdown επιλογής Case μέσα στο λιμάνι
-                            case_options = {
+                            # Δημιουργία λίστας με επιλογή "-- Επιλέξτε Case / Ταξίδι --" στην αρχή
+                            case_options_dict = {
                                 f"{l[1]} - {l[2] if l[2] else 'Case #'+str(l[0])} ({l[18]})": l
                                 for l in port_specific_logs
                             }
+                            
+                            select_placeholder = "-- Επιλέξτε Case / Ταξίδι --"
+                            options_list = [select_placeholder] + list(case_options_dict.keys())
 
                             selected_case_label = st.selectbox(
                                 f"📋 Επιλέξτε Case/Ταξίδι στο λιμάνι {port}:",
-                                list(case_options.keys()),
+                                options_list,
+                                index=0,
                                 key=f"select_case_{port}",
                             )
 
-                            chosen_log = case_options[selected_case_label]
-                            render_single_log_card(chosen_log)
+                            # Εμφάνιση της κάρτας ΜΟΝΟ αν ο χρήστης επιλέξει κάποιο συγκεκριμένο case
+                            if selected_case_label != select_placeholder:
+                                chosen_log = case_options_dict[selected_case_label]
+                                render_single_log_card(chosen_log)
             else:
                 st.info("Δεν έχουν καταχωρηθεί ακόμη χώρες.")
         else:
