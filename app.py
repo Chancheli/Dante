@@ -171,7 +171,7 @@ def check_password():
 
 
 # ---------------------------------------------------------
-# 1. DATABASE (SQLite Setup)
+# 1. DATABASE (SQLite Setup & Templates Table)
 # ---------------------------------------------------------
 VESSEL_LIST = ["MT GEA", "MT ESTIA", "MT ORFEAS", "MT EVRIDIKI"]
 
@@ -180,6 +180,7 @@ def init_db():
     conn = sqlite3.connect("crew_port_rules.db")
     cursor = conn.cursor()
 
+    # Table for Port Logs
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS port_logs (
@@ -206,6 +207,17 @@ def init_db():
     """
     )
 
+    # Table for Email Drafts/Templates
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS email_templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            template_title TEXT UNIQUE NOT NULL,
+            template_body TEXT NOT NULL
+        )
+    """
+    )
+
     cursor.execute("PRAGMA table_info(port_logs)")
     columns = [col[1] for col in cursor.fetchall()]
 
@@ -214,10 +226,33 @@ def init_db():
     if "case_title" not in columns:
         cursor.execute("ALTER TABLE port_logs ADD COLUMN case_title TEXT DEFAULT ''")
 
+    # Insert default templates if empty
+    cursor.execute("SELECT COUNT(*) FROM email_templates")
+    if cursor.fetchone()[0] == 0:
+        default_templates = [
+            (
+                "Email to Agent",
+                "Dear Agent,\n\nPlease advise on the current port regulations, visa requirements, and OK to Board necessity for upcoming crew change at your port.\n\nBest regards,\nCrew Department",
+            ),
+            (
+                "Email to Manning Agency",
+                "Dear Manning Agency,\n\nPlease prepare the flight arrangements and required documentation for the joining crew members as per vessel's schedule.\n\nBest regards,\nCrew Department",
+            ),
+            (
+                "Email to Master",
+                "Dear Captain,\n\nPlease find attached the crew change instructions and documentation requirements for the upcoming port call.\n\nBest regards,\nCrew Department",
+            ),
+        ]
+        cursor.executemany(
+            "INSERT INTO email_templates (template_title, template_body) VALUES (?, ?)",
+            default_templates,
+        )
+
     conn.commit()
     conn.close()
 
 
+# Database Queries for Port Logs
 def add_log(
     vessel_name,
     case_title,
@@ -400,6 +435,39 @@ def search_logs(query_text, nationality=None, role=None, vessel=None):
     rows = cursor.fetchall()
     conn.close()
     return rows
+
+
+# Database Queries for Templates
+def fetch_all_templates():
+    conn = sqlite3.connect("crew_port_rules.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, template_title, template_body FROM email_templates ORDER BY template_title ASC")
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+
+def add_or_update_template(title, body):
+    conn = sqlite3.connect("crew_port_rules.db")
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO email_templates (template_title, template_body)
+        VALUES (?, ?)
+        ON CONFLICT(template_title) DO UPDATE SET template_body=excluded.template_body
+    """,
+        (title.strip(), body.strip()),
+    )
+    conn.commit()
+    conn.close()
+
+
+def delete_template(template_id):
+    conn = sqlite3.connect("crew_port_rules.db")
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM email_templates WHERE id=?", (template_id,))
+    conn.commit()
+    conn.close()
 
 
 # ---------------------------------------------------------
@@ -587,12 +655,13 @@ def main():
     st.markdown("<br>", unsafe_allow_html=True)
 
     # Main Navigation Tabs
-    tab1, tab2, tab3, tab4 = st.tabs(
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
         [
             "🔍 Search & Cases",
             "🌍 Countries & Vessels Directory",
             "➕ New Case Entry",
             "✏️ Edit & Delete",
+            "📧 Email Templates / Drafts",
         ]
     )
 
@@ -987,6 +1056,63 @@ def main():
                     delete_log(e_id)
                     st.warning(f"🗑️ Entry #{e_id} deleted.")
                     st.rerun()
+
+    # -----------------------------------------------------
+    # TAB 5: EMAIL TEMPLATES / DRAFTS
+    # -----------------------------------------------------
+    with tab5:
+        st.subheader("📧 Email Templates & Quick Drafts")
+        templates = fetch_all_templates()
+
+        if templates:
+            template_dict = {t[1]: (t[0], t[2]) for t in templates}
+            selected_template_title = st.selectbox(
+                "📋 Select Email Template:",
+                list(template_dict.keys()),
+            )
+
+            selected_id, selected_body = template_dict[selected_template_title]
+
+            st.markdown("#### 📄 Template Content")
+            st.text_area(
+                "Copy your draft from below:",
+                value=selected_body,
+                height=220,
+                key=f"draft_area_{selected_id}",
+            )
+
+        st.markdown("---")
+        st.markdown("### ⚙️ Template Manager (Add / Edit / Delete)")
+
+        col_t1, col_t2 = st.columns(2)
+
+        with col_t1:
+            st.markdown("##### ➕ Add or Update Template")
+            with st.form("save_template_form"):
+                new_t_title = st.text_input("Template Title*", placeholder="e.g. Email to Port Agent")
+                new_t_body = st.text_area("Template Text / Body*", height=150, placeholder="Write your standardized email draft here...")
+                save_t_submitted = st.form_submit_button("💾 Save Template")
+
+                if save_t_submitted:
+                    if new_t_title and new_t_body:
+                        add_or_update_template(new_t_title, new_t_body)
+                        st.success("✅ Template saved successfully!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Please provide both Title and Body.")
+
+        with col_t2:
+            st.markdown("##### 🗑️ Delete Template")
+            if templates:
+                with st.form("delete_template_form"):
+                    del_t_title = st.selectbox("Select Template to Delete:", list(template_dict.keys()))
+                    del_t_id = template_dict[del_t_title][0]
+                    delete_t_submitted = st.form_submit_button("🗑️ Delete Selected Template")
+
+                    if delete_t_submitted:
+                        delete_template(del_t_id)
+                        st.warning("🗑️ Template deleted successfully.")
+                        st.rerun()
 
 
 if __name__ == "__main__":
